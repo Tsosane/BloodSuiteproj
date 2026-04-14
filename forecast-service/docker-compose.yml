@@ -1,0 +1,39 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  forecast-service:
+    build: ./forecast-service
+    container_name: blood-suite-forecast
+    ports:
+      - "8001:8001"
+    environment:
+      - DB_HOST=localhost
+      - DB_PORT=5432
+      - DB_NAME=bloodsuite_db
+      - DB_USER=postgres
+      - DB_PASSWORD=${bloodsuite123}
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    volumes:
+      - ./forecast-service/models:/app/models
+      - ./forecast-service/logs:/app/logs
+
+  postgres:
+    image: postgres:15
+    container_name: blood-suite-db
+    environment:
+      - POSTGRES_DB=bloodsuite
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${bloodsuite123}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
