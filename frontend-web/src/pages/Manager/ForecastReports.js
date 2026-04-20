@@ -89,6 +89,9 @@ const ForecastReports = () => {
   const fetchForecastData = async () => {
     setIsLoading(true);
     setErrorMessage('');
+    setExportStatus(null);
+    setForecastDataItems([]);
+    setAllForecastSummary([]);
     try {
       let combinedNotificationSummary = null;
 
@@ -188,6 +191,14 @@ const ForecastReports = () => {
   useEffect(() => {
     fetchForecastData();
   }, [forecastPeriod, selectedBloodType]);
+
+  const handleForecastPeriodChange = (event) => {
+    setForecastPeriod(event.target.value);
+  };
+
+  const handleBloodTypeChange = (event) => {
+    setSelectedBloodType(event.target.value);
+  };
 
   const currentData = forecastDataItems;
   const hasShortage = shortageAlerts.length > 0;
@@ -347,7 +358,7 @@ const ForecastReports = () => {
         <Box>
           <FormControl sx={{ minWidth: 120, mr: 2 }} size="small">
             <InputLabel>Forecast Period</InputLabel>
-            <Select value={forecastPeriod} onChange={(e) => setForecastPeriod(e.target.value)} label="Forecast Period">
+            <Select value={forecastPeriod} onChange={handleForecastPeriodChange} label="Forecast Period">
               <MenuItem value="7day">7-Day Forecast</MenuItem>
               <MenuItem value="30day">30-Day Forecast</MenuItem>
               <MenuItem value="90day">90-Day Forecast</MenuItem>
@@ -355,7 +366,7 @@ const ForecastReports = () => {
           </FormControl>
           <FormControl sx={{ minWidth: 120, mr: 2 }} size="small">
             <InputLabel>Blood Type</InputLabel>
-            <Select value={selectedBloodType} onChange={(e) => setSelectedBloodType(e.target.value)} label="Blood Type">
+            <Select value={selectedBloodType} onChange={handleBloodTypeChange} label="Blood Type">
               <MenuItem value="all">All Types</MenuItem>
               {bloodTypes.map(type => <MenuItem key={type} value={type}>{type}</MenuItem>)}
             </Select>
@@ -386,6 +397,13 @@ const ForecastReports = () => {
       {errorMessage && (
         <Alert severity="error" sx={{ mb: 3 }}>
           {errorMessage}
+        </Alert>
+      )}
+      {!errorMessage && (
+        <Alert severity="info" sx={{ mb: 3 }}>
+          Viewing <strong>{forecastPeriod.replace('day', '-day')}</strong> forecast data for{' '}
+          <strong>{selectedBloodType === 'all' ? 'all blood types' : selectedBloodType}</strong>.
+          {isLoading ? ' Refreshing report now...' : ' Select a different period or blood type to reload the report.'}
         </Alert>
       )}
       {!errorMessage && notificationSummary && notificationSummary.shortageTypesProcessed > 0 && (
@@ -472,7 +490,11 @@ const ForecastReports = () => {
               ) : (
                 <Box>
                   <ResponsiveContainer width="100%" height={400}>
-                    <BarChart data={allForecastSummary} margin={{ top: 20, right: 20, left: 0, bottom: 5 }}>
+                    <BarChart
+                      key={`summary-${forecastPeriod}-${selectedBloodType}`}
+                      data={allForecastSummary}
+                      margin={{ top: 20, right: 20, left: 0, bottom: 5 }}
+                    >
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="blood_type" />
                       <YAxis />
@@ -503,7 +525,7 @@ const ForecastReports = () => {
               </Box>
             ) : (
               <ResponsiveContainer width="100%" height={400}>
-                <ComposedChart data={currentData}>
+                <ComposedChart key={`detail-${forecastPeriod}-${selectedBloodType}`} data={currentData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey={forecastPeriod === '7day' ? 'day' : 'date'} />
                   <YAxis />
