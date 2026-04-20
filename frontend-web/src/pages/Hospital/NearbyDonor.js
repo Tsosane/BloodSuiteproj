@@ -26,7 +26,7 @@ import {
   Phone as PhoneIcon,
   Send as SendIcon,
 } from '@mui/icons-material';
-import { GoogleMap, InfoWindow, Marker, useJsApiLoader } from '@react-google-maps/api';
+import { DirectionsRenderer, GoogleMap, InfoWindow, Marker, Polyline, useJsApiLoader } from '@react-google-maps/api';
 import donorService from '../../services/donorService';
 import hospitalService from '../../services/hospitalService';
 
@@ -37,6 +37,14 @@ const normalizeCoordinate = (value, fallback) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
+
+const hasDonorCoordinates = (donor) => (
+  Number.isFinite(Number(donor?.latitude)) && Number.isFinite(Number(donor?.longitude))
+);
+
+const hasMapCoordinates = (location) => (
+  Number.isFinite(Number(location?.lat)) && Number.isFinite(Number(location?.lng))
+);
 
 const FallbackMap = ({ hospitalLocation, donors, selectedDonor, onSelectDonor }) => {
   const points = useMemo(() => {
@@ -61,6 +69,8 @@ const FallbackMap = ({ hospitalLocation, donors, selectedDonor, onSelectDonor })
     const lngSpan = Math.max(maxLng - minLng, 0.01);
 
     const project = (latitude, longitude) => ({
+      x: ((longitude - minLng) / lngSpan) * 100,
+      y: ((maxLat - latitude) / latSpan) * 100,
       left: `${((longitude - minLng) / lngSpan) * 100}%`,
       top: `${((maxLat - latitude) / latSpan) * 100}%`,
     });
@@ -95,6 +105,26 @@ const FallbackMap = ({ hospitalLocation, donors, selectedDonor, onSelectDonor })
           backgroundSize: '40px 40px',
         }}
       />
+
+      <Box
+        component="svg"
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+        sx={{ position: 'absolute', inset: 0, zIndex: 1 }}
+      >
+        {points.donors.map((point) => (
+          <line
+            key={`route-${point.id}`}
+            x1={points.hospital.x}
+            y1={points.hospital.y}
+            x2={point.x}
+            y2={point.y}
+            stroke={selectedDonor?.id === point.id ? '#d32f2f' : 'rgba(211, 47, 47, 0.35)'}
+            strokeWidth={selectedDonor?.id === point.id ? '0.8' : '0.45'}
+            strokeDasharray={selectedDonor?.id === point.id ? '0' : '2 1'}
+          />
+        ))}
+      </Box>
 
       <Box
         sx={{
@@ -163,6 +193,9 @@ const NearbyDonors = () => {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [locationWarning, setLocationWarning] = useState('');
+  const [directions, setDirections] = useState(null);
+  const [directionsError, setDirectionsError] = useState('');
+  const [routeSummary, setRouteSummary] = useState(null);
 
   const googleMapsApiKey = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
   const { isLoaded, loadError } = useJsApiLoader({
@@ -179,6 +212,16 @@ const NearbyDonors = () => {
       lng: normalizeCoordinate(hospital?.longitude, DEFAULT_CENTER.lng),
     };
   }, [hospital?.latitude, hospital?.longitude, originOverride]);
+
+  const mappableDonors = useMemo(
+    () => donors.filter((donor) => hasDonorCoordinates(donor)),
+    [donors]
+  );
+
+  const selectedMapDonor = useMemo(
+    () => (selectedDonor && hasDonorCoordinates(selectedDonor) ? selectedDonor : null),
+    [selectedDonor]
+  );
 
   const loadHospital = async () => {
     try {
@@ -236,7 +279,10 @@ const NearbyDonors = () => {
 
       setDonors(normalizedDonors);
       setSelectedDonor((current) =>
-        normalizedDonors.find((donor) => donor.id === current?.id) || normalizedDonors[0] || null
+        normalizedDonors.find((donor) => donor.id === current?.id)
+        || normalizedDonors.find((donor) => hasDonorCoordinates(donor))
+        || normalizedDonors[0]
+        || null
       );
       setSuccessMessage(`Loaded ${normalizedDonors.length} eligible donor${normalizedDonors.length === 1 ? '' : 's'} within ${radius} km.`);
     } catch (loadError) {
@@ -258,6 +304,68 @@ const NearbyDonors = () => {
       loadNearbyDonors(loading);
     }
   }, [hospital?.id, radius, bloodTypeFilter, originOverride]);
+
+  useEffect(() => {
+    setDirections(null);
+    setDirectionsError('');
+    setRouteSummary(null);
+
+    if (!selectedMapDonor || !isLoaded || loadError || !googleMapsApiKey || !hasMapCoordinates(effectiveLocation) || !window.google?.maps) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    const directionsService = new window.google.maps.DirectionsService();
+
+    directionsService.route(
+      {
+        origin: effectiveLocation,
+        destination: {
+          lat: Number(selectedMapDonor.latitude),
+          lng: Number(selectedMapDonor.longitude),
+        },
+        travelMode: window.google.maps.TravelMode.DRIVING,
+      },
+      (result, status) => {
+        if (cancelled) {
+          return;
+        }
+
+        if (status === window.google.maps.DirectionsStatus.OK && result?.routes?.length) {
+          const firstLeg = result.routes[0]?.legs?.[0];
+          setDirections(result);
+          setRouteSummary({
+            distance: firstLeg?.distance?.text || `${selectedMapDonor.distance.toFixed(1)} km`,
+            duration: firstLeg?.duration?.text || 'Unavailable',
+          });
+          return;
+        }
+
+        setDirections(null);
+        setDirectionsError('Live road directions are unavailable for this donor right now. Showing a direct location route instead.');
+      }
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveLocation, googleMapsApiKey, isLoaded, loadError, selectedMapDonor]);
+
+  const handleSelectDonor = (donor) => {
+    setSelectedDonor(donor);
+
+    if (hasDonorCoordinates(donor)) {
+      setMapCenter({
+        lat: (effectiveLocation.lat + Number(donor.latitude)) / 2,
+        lng: (effectiveLocation.lng + Number(donor.longitude)) / 2,
+      });
+      return;
+    }
+
+    setDirections(null);
+    setRouteSummary(null);
+    setDirectionsError('The selected donor does not have valid map coordinates.');
+  };
 
   const handleUseCurrentLocation = () => {
     if (!navigator.geolocation) {
@@ -302,6 +410,16 @@ const NearbyDonors = () => {
     setError('This donor does not have an email address on file.');
   };
 
+  const handleOpenRoute = (donor) => {
+    if (!hasDonorCoordinates(donor)) {
+      setDirectionsError('This donor does not have valid coordinates for routing.');
+      return;
+    }
+
+    const routeUrl = `https://www.google.com/maps/dir/?api=1&origin=${effectiveLocation.lat},${effectiveLocation.lng}&destination=${donor.latitude},${donor.longitude}&travelmode=driving`;
+    window.open(routeUrl, '_blank', 'noopener,noreferrer');
+  };
+
   const averageDistance = donors.length
     ? (donors.reduce((sum, donor) => sum + donor.distance, 0) / donors.length).toFixed(1)
     : '0.0';
@@ -338,35 +456,75 @@ const NearbyDonors = () => {
           icon={{ url: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png' }}
         />
 
-        {donors.map((donor) => (
-          <Marker
-            key={donor.id}
-            position={{ lat: donor.latitude, lng: donor.longitude }}
-            icon={{ url: 'https://maps.google.com/mapfiles/ms/icons/green-dot.png' }}
-            onClick={() => setSelectedDonor(donor)}
+        {mappableDonors.map((donor) => (
+          <Polyline
+            key={`path-${donor.id}`}
+            path={[
+              effectiveLocation,
+              { lat: Number(donor.latitude), lng: Number(donor.longitude) },
+            ]}
+            options={{
+              strokeColor: donor.id === selectedMapDonor?.id ? '#d32f2f' : '#ef9a9a',
+              strokeOpacity: donor.id === selectedMapDonor?.id ? 0.95 : 0.45,
+              strokeWeight: donor.id === selectedMapDonor?.id ? 4 : 2,
+              geodesic: true,
+            }}
           />
         ))}
 
-        {selectedDonor && (
+        {mappableDonors.map((donor) => (
+          <Marker
+            key={donor.id}
+            position={{ lat: Number(donor.latitude), lng: Number(donor.longitude) }}
+            icon={{ url: 'https://maps.google.com/mapfiles/ms/icons/green-dot.png' }}
+            onClick={() => handleSelectDonor(donor)}
+          />
+        ))}
+
+        {selectedMapDonor && directions && (
+          <DirectionsRenderer
+            directions={directions}
+            options={{
+              suppressMarkers: true,
+              polylineOptions: {
+                strokeColor: '#b71c1c',
+                strokeOpacity: 0.9,
+                strokeWeight: 5,
+              },
+            }}
+          />
+        )}
+
+        {selectedMapDonor && (
           <InfoWindow
-            position={{ lat: selectedDonor.latitude, lng: selectedDonor.longitude }}
+            position={{ lat: Number(selectedMapDonor.latitude), lng: Number(selectedMapDonor.longitude) }}
             onCloseClick={() => setSelectedDonor(null)}
           >
             <Box sx={{ minWidth: 220 }}>
               <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                {selectedDonor.name}
+                {selectedMapDonor.name}
               </Typography>
-              <Typography variant="body2">Blood Type: {selectedDonor.blood_type}</Typography>
-              <Typography variant="body2">Distance: {selectedDonor.distance.toFixed(1)} km</Typography>
-              <Button
-                size="small"
-                variant="contained"
-                startIcon={<SendIcon />}
-                onClick={() => handleContactDonor(selectedDonor)}
-                sx={{ mt: 1, bgcolor: '#d32f2f', '&:hover': { bgcolor: '#b71c1c' } }}
-              >
-                Contact
-              </Button>
+              <Typography variant="body2">Blood Type: {selectedMapDonor.blood_type}</Typography>
+              <Typography variant="body2">Distance: {selectedMapDonor.distance.toFixed(1)} km</Typography>
+              <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => handleOpenRoute(selectedMapDonor)}
+                  sx={{ borderColor: '#d32f2f', color: '#d32f2f' }}
+                >
+                  Route
+                </Button>
+                <Button
+                  size="small"
+                  variant="contained"
+                  startIcon={<SendIcon />}
+                  onClick={() => handleContactDonor(selectedMapDonor)}
+                  sx={{ bgcolor: '#d32f2f', '&:hover': { bgcolor: '#b71c1c' } }}
+                >
+                  Contact
+                </Button>
+              </Box>
             </Box>
           </InfoWindow>
         )}
@@ -516,6 +674,45 @@ const NearbyDonors = () => {
             {renderMap()}
           </Paper>
 
+          {selectedDonor && (
+            <Paper sx={{ p: 2, borderRadius: 2, mb: 3 }}>
+              <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={2}>
+                <Box>
+                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#d32f2f' }}>
+                    Route To {selectedDonor.name}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {routeSummary
+                      ? `Estimated drive: ${routeSummary.distance} • ${routeSummary.duration}`
+                      : `Direct distance: ${selectedDonor.distance.toFixed(1)} km`}
+                  </Typography>
+                </Box>
+                <Box display="flex" gap={1} flexWrap="wrap">
+                  <Button
+                    variant="outlined"
+                    onClick={() => handleOpenRoute(selectedDonor)}
+                    sx={{ borderColor: '#d32f2f', color: '#d32f2f' }}
+                  >
+                    Open Route
+                  </Button>
+                  <Button
+                    variant="contained"
+                    startIcon={<SendIcon />}
+                    onClick={() => handleContactDonor(selectedDonor)}
+                    sx={{ bgcolor: '#d32f2f', '&:hover': { bgcolor: '#b71c1c' } }}
+                  >
+                    Contact Donor
+                  </Button>
+                </Box>
+              </Box>
+              {directionsError && (
+                <Alert severity="info" sx={{ mt: 2 }}>
+                  {directionsError}
+                </Alert>
+              )}
+            </Paper>
+          )}
+
           <Paper sx={{ borderRadius: 2 }}>
             <Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0' }}>
               <Typography variant="h6" sx={{ fontWeight: 700, color: '#d32f2f' }}>
@@ -538,17 +735,34 @@ const NearbyDonors = () => {
                 donors.map((donor, index) => (
                   <React.Fragment key={donor.id}>
                     <ListItem
-                      sx={{ py: 2, '&:hover': { bgcolor: '#fff5f5' } }}
+                      sx={{ py: 2, cursor: 'pointer', '&:hover': { bgcolor: '#fff5f5' } }}
+                      onClick={() => handleSelectDonor(donor)}
                       secondaryAction={
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          startIcon={<SendIcon />}
-                          onClick={() => handleContactDonor(donor)}
-                          sx={{ borderColor: '#d32f2f', color: '#d32f2f' }}
-                        >
-                          Contact
-                        </Button>
+                        <Box display="flex" gap={1}>
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleOpenRoute(donor);
+                            }}
+                            sx={{ borderColor: '#d32f2f', color: '#d32f2f' }}
+                          >
+                            Route
+                          </Button>
+                          <Button
+                            variant="contained"
+                            size="small"
+                            startIcon={<SendIcon />}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleContactDonor(donor);
+                            }}
+                            sx={{ bgcolor: '#d32f2f', '&:hover': { bgcolor: '#b71c1c' } }}
+                          >
+                            Contact
+                          </Button>
+                        </Box>
                       }
                     >
                       <ListItemAvatar>

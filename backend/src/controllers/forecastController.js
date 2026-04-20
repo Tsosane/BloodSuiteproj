@@ -2,6 +2,13 @@ const forecastService = require('../services/forecastService');
 const donorNotificationService = require('../services/donorNotificationService');
 const XLSX = require('xlsx');
 
+const getErrorMessage = (error, fallbackMessage = 'Forecast request failed.') => (
+  error?.response?.data?.detail ||
+  error?.response?.data?.error ||
+  error?.message ||
+  fallbackMessage
+);
+
 const normalizeAlertsPayload = (payload) => {
   if (Array.isArray(payload)) {
     return {
@@ -67,7 +74,7 @@ const notifyForAlerts = async (alerts) => {
       whatsappSent: 0,
       skippedExisting: 0,
       results: [],
-      error: error.message,
+      error: getErrorMessage(error, 'Unable to notify donors for forecast shortages.'),
     };
   }
 };
@@ -89,7 +96,7 @@ const getForecast = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message,
+      error: getErrorMessage(error, 'Unable to load forecast for the selected blood type.'),
     });
   }
 };
@@ -112,7 +119,7 @@ const getAllForecasts = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message,
+      error: getErrorMessage(error, 'Unable to load forecasts right now.'),
     });
   }
 };
@@ -130,7 +137,7 @@ const getShortageAlerts = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message,
+      error: getErrorMessage(error, 'Unable to load shortage alerts right now.'),
     });
   }
 };
@@ -161,7 +168,7 @@ const getRecommendedStock = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message,
+      error: getErrorMessage(error, 'Unable to load recommended stock actions right now.'),
     });
   }
 };
@@ -177,7 +184,7 @@ const getModelAccuracy = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message,
+      error: getErrorMessage(error, 'Unable to load model accuracy right now.'),
     });
   }
 };
@@ -253,7 +260,7 @@ const exportForecastReport = async (req, res) => {
     if (normalizedFormat === 'csv') {
       const csv = XLSX.utils.sheet_to_csv(worksheet);
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-      res.setHeader('Content-Disposition', `attachment; filename=\"${fileBase}.csv\"`);
+      res.setHeader('Content-Disposition', `attachment; filename="${fileBase}.csv"`);
       return res.send(csv);
     }
 
@@ -261,12 +268,12 @@ const exportForecastReport = async (req, res) => {
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Forecast');
     const workbookBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=\"${fileBase}.xlsx\"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${fileBase}.xlsx"`);
     return res.send(workbookBuffer);
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message,
+      error: getErrorMessage(error, 'Unable to export forecast data right now.'),
     });
   }
 };
@@ -283,7 +290,7 @@ const retrainModels = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message,
+      error: getErrorMessage(error, 'Unable to retrain forecast models right now.'),
     });
   }
 };
@@ -313,7 +320,7 @@ const triggerDonorNotifications = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message,
+      error: getErrorMessage(error, 'Unable to trigger donor notifications right now.'),
     });
   }
 };

@@ -11,6 +11,15 @@ class ForecastService {
     });
   }
 
+  getServiceErrorMessage(error, fallbackMessage) {
+    return (
+      error?.response?.data?.detail ||
+      error?.response?.data?.error ||
+      error?.message ||
+      fallbackMessage
+    );
+  }
+
   /**
    * Get forecast for a specific blood type
    */
@@ -21,8 +30,12 @@ class ForecastService {
       });
       return response.data;
     } catch (error) {
-      console.error(`Error getting forecast for ${bloodType}:`, error.message);
-      throw error;
+      const message = this.getServiceErrorMessage(
+        error,
+        `Unable to get forecast for ${bloodType}.`
+      );
+      console.error(`Error getting forecast for ${bloodType}:`, message);
+      throw new Error(message);
     }
   }
 
@@ -36,8 +49,12 @@ class ForecastService {
       });
       return response.data;
     } catch (error) {
-      console.error('Error getting all forecasts:', error.message);
-      throw error;
+      const message = this.getServiceErrorMessage(
+        error,
+        'Unable to get forecasts from the forecasting service.'
+      );
+      console.error('Error getting all forecasts:', message);
+      throw new Error(message);
     }
   }
 
@@ -49,8 +66,12 @@ class ForecastService {
       const response = await this.client.get('/forecast/alerts/shortages');
       return response.data;
     } catch (error) {
-      console.error('Error getting shortage alerts:', error.message);
-      throw error;
+      const message = this.getServiceErrorMessage(
+        error,
+        'Unable to get shortage alerts from the forecasting service.'
+      );
+      console.error('Error getting shortage alerts:', message);
+      throw new Error(message);
     }
   }
 
@@ -62,8 +83,12 @@ class ForecastService {
       const response = await this.client.get('/forecast/accuracy');
       return response.data;
     } catch (error) {
-      console.error('Error getting model accuracy:', error.message);
-      throw error;
+      const message = this.getServiceErrorMessage(
+        error,
+        'Unable to get forecast model accuracy.'
+      );
+      console.error('Error getting model accuracy:', message);
+      throw new Error(message);
     }
   }
 
@@ -75,8 +100,12 @@ class ForecastService {
       const response = await this.client.post('/forecast/train');
       return response.data;
     } catch (error) {
-      console.error('Error retraining models:', error.message);
-      throw error;
+      const message = this.getServiceErrorMessage(
+        error,
+        'Unable to retrain forecast models.'
+      );
+      console.error('Error retraining models:', message);
+      throw new Error(message);
     }
   }
 

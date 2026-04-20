@@ -65,6 +65,20 @@ const forecastService = {
     }
   },
 
+  // Trigger donor notifications for a predicted shortage
+  triggerDonorNotifications: async ({ bloodType, shortageAmount, hospitalName } = {}) => {
+    try {
+      const response = await api.post('/forecast/notify-donors', {
+        bloodType,
+        shortageAmount,
+        hospitalName,
+      });
+      return response;
+    } catch (error) {
+      throw error;
+    }
+  },
+
   // Get forecast comparison (actual vs predicted)
   getForecastComparison: async (bloodType) => {
     try {

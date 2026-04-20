@@ -23,6 +23,12 @@ import {
   CircularProgress,
   Avatar,
   Divider,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
 } from '@mui/material';
 import {
   TrendingUp as TrendingUpIcon,
@@ -70,6 +76,8 @@ const ForecastReports = () => {
   const [exportStatus, setExportStatus] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [notificationSummary, setNotificationSummary] = useState(null);
+  const [actionStatus, setActionStatus] = useState(null);
+  const [activeRecommendation, setActiveRecommendation] = useState('');
 
   const mergeNotificationSummary = (current, incoming) => {
     if (!incoming) {
@@ -234,6 +242,24 @@ const ForecastReports = () => {
     }));
   };
 
+  const forecastTableRows = selectedBloodType === 'all'
+    ? allForecastSummary.map((item) => ({
+      bloodType: item.blood_type,
+      totalPredictedDemand: Number(item.total_predicted_demand || 0),
+      currentStock: Number(item.current_stock || 0),
+      shortageGap: Math.max(0, Number(item.total_predicted_demand || 0) - Number(item.current_stock || 0)),
+      shortageAlert: item.shortage_alert ? 'Yes' : 'No',
+    }))
+    : currentData.map((item) => ({
+      day: item.day,
+      date: item.date,
+      predictedDemand: Number(item.demand || 0),
+      currentSupply: Number(item.supply || 0),
+      projectedShortage: Math.max(0, Number(item.demand || 0) - Number(item.supply || 0)),
+      lowerBound: item.lowerBound != null ? Number(item.lowerBound) : null,
+      upperBound: item.upperBound != null ? Number(item.upperBound) : null,
+    }));
+
   const triggerBrowserDownload = (blob, filename) => {
     const blobUrl = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -325,6 +351,42 @@ const ForecastReports = () => {
     setTimeout(() => setExportStatus(null), 3000);
   };
 
+  const handleRecommendationAction = async (recommendation) => {
+    const matchingAlert = filteredShortageAlerts.find((alert) => alert.bloodType === recommendation.bloodType);
+    const shortageAmount = Math.max(1, Number(matchingAlert?.shortage || recommendation.suggestedDonors || 0));
+
+    setActiveRecommendation(recommendation.bloodType);
+    setActionStatus(null);
+
+    try {
+      const response = await forecastService.triggerDonorNotifications({
+        bloodType: recommendation.bloodType,
+        shortageAmount,
+      });
+
+      if (response?.success) {
+        setActionStatus({
+          severity: 'success',
+          message: `Donor requests sent for ${recommendation.bloodType}.`,
+        });
+        await fetchForecastData();
+        return;
+      }
+
+      setActionStatus({
+        severity: 'error',
+        message: `Unable to send donor requests for ${recommendation.bloodType}.`,
+      });
+    } catch (error) {
+      setActionStatus({
+        severity: 'error',
+        message: error.error || error.message || `Unable to send donor requests for ${recommendation.bloodType}.`,
+      });
+    } finally {
+      setActiveRecommendation('');
+    }
+  };
+
   const getSeverityColor = (severity) => {
     switch(severity) {
       case 'high': return '#f44336';
@@ -358,6 +420,76 @@ const ForecastReports = () => {
 
     return `Prediction-triggered donor outreach sent ${sentParts.join(', ')}.`;
   };
+
+  const renderForecastTable = () => (
+    <TableContainer component={Paper} variant="outlined" sx={{ mb: 3, borderRadius: 2 }}>
+      <Table size="small">
+        <TableHead sx={{ bgcolor: '#fff5f5' }}>
+          <TableRow>
+            {selectedBloodType === 'all' ? (
+              <>
+                <TableCell sx={{ fontWeight: 700 }}>Blood Type</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Predicted Demand</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Current Stock</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Shortage Gap</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Alert</TableCell>
+              </>
+            ) : (
+              <>
+                <TableCell sx={{ fontWeight: 700 }}>Day</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Date</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Predicted Demand</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Current Supply</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Projected Shortage</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Lower Bound</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Upper Bound</TableCell>
+              </>
+            )}
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {forecastTableRows.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={selectedBloodType === 'all' ? 5 : 7} align="center">
+                No forecast data available for the selected filters.
+              </TableCell>
+            </TableRow>
+          ) : forecastTableRows.map((row) => (
+            <TableRow key={selectedBloodType === 'all' ? row.bloodType : `${row.date}-${row.day}`}>
+              {selectedBloodType === 'all' ? (
+                <>
+                  <TableCell>{row.bloodType}</TableCell>
+                  <TableCell>{row.totalPredictedDemand}</TableCell>
+                  <TableCell>{row.currentStock}</TableCell>
+                  <TableCell>{row.shortageGap}</TableCell>
+                  <TableCell>
+                    <Chip
+                      size="small"
+                      label={row.shortageAlert}
+                      sx={{
+                        bgcolor: row.shortageAlert === 'Yes' ? '#ffebee' : '#e8f5e9',
+                        color: row.shortageAlert === 'Yes' ? '#c62828' : '#2e7d32',
+                      }}
+                    />
+                  </TableCell>
+                </>
+              ) : (
+                <>
+                  <TableCell>{row.day}</TableCell>
+                  <TableCell>{row.date}</TableCell>
+                  <TableCell>{row.predictedDemand}</TableCell>
+                  <TableCell>{row.currentSupply}</TableCell>
+                  <TableCell>{row.projectedShortage}</TableCell>
+                  <TableCell>{row.lowerBound ?? 'N/A'}</TableCell>
+                  <TableCell>{row.upperBound ?? 'N/A'}</TableCell>
+                </>
+              )}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  );
   return (
     <Box sx={{ p: 3 }}>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
@@ -448,6 +580,11 @@ const ForecastReports = () => {
           Unable to retrain models. Please try again.
         </Alert>
       )}
+      {actionStatus && (
+        <Alert severity={actionStatus.severity} sx={{ mb: 3 }}>
+          {actionStatus.message}
+        </Alert>
+      )}
 
       <Grid container spacing={3} sx={{ mb: 4 }}>
         {filteredShortageAlerts.map((alert) => (
@@ -489,6 +626,9 @@ const ForecastReports = () => {
                     ? '30-Day Demand Forecast'
                     : '90-Day Demand Forecast'}`}
             </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Prediction results are shown in table form first for easier review, with the chart kept below for quick visual comparison.
+            </Typography>
             {isLoading ? (
               <Box sx={{ py: 10, textAlign: 'center' }}>
                 <CircularProgress sx={{ color: '#d32f2f' }} />
@@ -500,6 +640,7 @@ const ForecastReports = () => {
                 </Box>
               ) : (
                 <Box>
+                  {renderForecastTable()}
                   <ResponsiveContainer width="100%" height={400}>
                     <BarChart
                       key={`summary-${forecastPeriod}-${selectedBloodType}`}
@@ -535,19 +676,22 @@ const ForecastReports = () => {
                 <Typography variant="body2" color="text.secondary">No forecast data available for the selected filters.</Typography>
               </Box>
             ) : (
-              <ResponsiveContainer width="100%" height={400}>
-                <ComposedChart key={`detail-${forecastPeriod}-${selectedBloodType}`} data={currentData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey={forecastPeriod === '7day' ? 'day' : 'date'} />
-                  <YAxis />
-                  <RechartsTooltip />
-                  <Legend />
-                  {showBounds && <Area type="monotone" dataKey="lowerBound" fill="#ffebee" stroke="none" />}
-                  {showBounds && <Area type="monotone" dataKey="upperBound" fill="#ffcdd2" stroke="none" />}
-                  <Line type="monotone" dataKey="demand" stroke="#d32f2f" strokeWidth={2} name="Predicted Demand" />
-                  <Line type="monotone" dataKey="supply" stroke="#4caf50" strokeWidth={2} name="Current Supply" />
-                </ComposedChart>
-              </ResponsiveContainer>
+              <Box>
+                {renderForecastTable()}
+                <ResponsiveContainer width="100%" height={400}>
+                  <ComposedChart key={`detail-${forecastPeriod}-${selectedBloodType}`} data={currentData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey={forecastPeriod === '7day' ? 'day' : 'date'} />
+                    <YAxis />
+                    <RechartsTooltip />
+                    <Legend />
+                    {showBounds && <Area type="monotone" dataKey="lowerBound" fill="#ffebee" stroke="none" />}
+                    {showBounds && <Area type="monotone" dataKey="upperBound" fill="#ffcdd2" stroke="none" />}
+                    <Line type="monotone" dataKey="demand" stroke="#d32f2f" strokeWidth={2} name="Predicted Demand" />
+                    <Line type="monotone" dataKey="supply" stroke="#4caf50" strokeWidth={2} name="Current Supply" />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </Box>
             )}
             <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center', gap: 2 }}>
               <Box display="flex" alignItems="center" gap={1}><Box sx={{ width: 20, height: 20, bgcolor: '#d32f2f' }} /><Typography variant="caption">Predicted Demand</Typography></Box>
@@ -577,7 +721,15 @@ const ForecastReports = () => {
                         <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{rec.action}</Typography>
                         <Typography variant="body2" color="text.secondary">Suggested donors: {rec.suggestedDonors}+</Typography>
                       </Box>
-                      <Button variant="outlined" size="small" sx={{ borderColor: '#d32f2f', color: '#d32f2f' }}>Schedule Drive</Button>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => handleRecommendationAction(rec)}
+                        disabled={activeRecommendation === rec.bloodType}
+                        sx={{ borderColor: '#d32f2f', color: '#d32f2f' }}
+                      >
+                        {activeRecommendation === rec.bloodType ? 'Sending...' : 'Notify Donors'}
+                      </Button>
                     </Box>
                   </Paper>
                 </Grid>
