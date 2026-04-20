@@ -1,5 +1,5 @@
 // src/pages/Register.js
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Paper,
@@ -39,6 +39,7 @@ import {
   CalendarToday as CalendarIcon,
   Badge as BadgeIcon,
   CheckCircle as CheckCircleIcon,
+  MyLocation as MyLocationIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import authService from '../services/authService';
@@ -52,6 +53,8 @@ const Register = () => {
   const [success, setSuccess] = useState('');
   const [activeStep, setActiveStep] = useState(0);
   const [userRole, setUserRole] = useState('donor');
+  const [locationMessage, setLocationMessage] = useState('');
+  const [locating, setLocating] = useState(false);
   
   const [formData, setFormData] = useState({
     // Common fields
@@ -88,6 +91,10 @@ const Register = () => {
 
   const steps = ['Select Role', 'Account Details', 'Profile Information'];
 
+  useEffect(() => {
+    setLocationMessage('');
+  }, [userRole]);
+
   const handleNext = () => {
     setActiveStep((prev) => prev + 1);
   };
@@ -98,6 +105,45 @@ const Register = () => {
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleUseCurrentLocation = (target) => {
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported by your browser.');
+      return;
+    }
+
+    setLocating(true);
+    setError('');
+    setLocationMessage('');
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const latitude = position.coords.latitude.toFixed(6);
+        const longitude = position.coords.longitude.toFixed(6);
+
+        setFormData((current) => (
+          target === 'hospital'
+            ? { ...current, hospitalLatitude: latitude, hospitalLongitude: longitude }
+            : { ...current, latitude, longitude }
+        ));
+
+        setLocating(false);
+        setLocationMessage(
+          target === 'hospital'
+            ? 'Hospital location captured from this device.'
+            : 'Your location has been captured from this device.'
+        );
+      },
+      () => {
+        setLocating(false);
+        setError('Unable to capture your location. Please allow browser location access and try again.');
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+      }
+    );
   };
 
   const validateStep = () => {
@@ -563,6 +609,18 @@ const Register = () => {
           rows={2}
         />
       </Grid>
+
+      <Grid item xs={12}>
+        <Alert severity="info" sx={{ bgcolor: '#fff5f5' }}>
+          Use your current location to fill the donor coordinates automatically. Manual editing is still available if you need to adjust them.
+        </Alert>
+      </Grid>
+
+      {locationMessage && userRole === 'donor' && (
+        <Grid item xs={12}>
+          <Alert severity="success">{locationMessage}</Alert>
+        </Grid>
+      )}
       
       <Grid item xs={12} md={6}>
         <TextField
@@ -572,6 +630,16 @@ const Register = () => {
           value={formData.latitude}
           onChange={handleChange}
           placeholder="e.g., -29.3167"
+          helperText="Tap the location icon to use your device location."
+          InputProps={{
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton onClick={() => handleUseCurrentLocation('donor')} disabled={locating}>
+                  {locating ? <CircularProgress size={18} /> : <MyLocationIcon sx={{ color: '#d32f2f' }} />}
+                </IconButton>
+              </InputAdornment>
+            ),
+          }}
         />
       </Grid>
       
@@ -671,6 +739,18 @@ const Register = () => {
           required
         />
       </Grid>
+
+      <Grid item xs={12}>
+        <Alert severity="info" sx={{ bgcolor: '#fff5f5' }}>
+          Use the current location button to capture hospital coordinates from this device during registration.
+        </Alert>
+      </Grid>
+
+      {locationMessage && userRole === 'hospital' && (
+        <Grid item xs={12}>
+          <Alert severity="success">{locationMessage}</Alert>
+        </Grid>
+      )}
       
       <Grid item xs={12} md={6}>
         <TextField
@@ -680,6 +760,16 @@ const Register = () => {
           value={formData.hospitalLatitude}
           onChange={handleChange}
           placeholder="e.g., -29.3167"
+          helperText="Tap the location icon to use your device location."
+          InputProps={{
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton onClick={() => handleUseCurrentLocation('hospital')} disabled={locating}>
+                  {locating ? <CircularProgress size={18} /> : <MyLocationIcon sx={{ color: '#d32f2f' }} />}
+                </IconButton>
+              </InputAdornment>
+            ),
+          }}
         />
       </Grid>
       

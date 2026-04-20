@@ -49,6 +49,7 @@ const hasMapCoordinates = (location) => (
 const isPlaceholderGoogleMapsKey = (value) => (
   !value
   || value.includes('your_google_maps_api_key_here')
+  || value.includes('YOUR_GOOGLE_MAPS_API_KEY_HERE')
   || value.includes('missing-key')
 );
 
@@ -178,7 +179,7 @@ const FallbackMap = ({ hospitalLocation, donors, selectedDonor, onSelectDonor })
             Location Map Fallback
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            Using a built-in coordinate view because no Google Maps key is configured.
+            Using a built-in coordinate view because no Google Maps key is configured in `frontend-web/.env`.
           </Typography>
         </Paper>
       </Box>

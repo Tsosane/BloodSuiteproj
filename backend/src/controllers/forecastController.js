@@ -29,7 +29,11 @@ const buildAlertFromForecast = (forecast, fallbackBloodType) => {
   const bloodType = forecast?.blood_type || fallbackBloodType;
   const currentStock = Number(forecast?.current_stock || 0);
   const predictedDemand = Number(forecast?.total_predicted_demand || 0);
-  const shortage = Math.max(0, Math.ceil(predictedDemand - currentStock));
+  const shortage = Math.max(
+    0,
+    Math.ceil(forecast?.risk_assessment?.projected_shortage_units || (predictedDemand - currentStock))
+  );
+  const riskLevel = forecast?.risk_assessment?.risk_level || 'warning';
 
   if (!bloodType || shortage <= 0) {
     return null;
@@ -40,7 +44,12 @@ const buildAlertFromForecast = (forecast, fallbackBloodType) => {
     currentStock,
     predictedDemand,
     shortage,
-    severity: shortage >= 10 ? 'high' : 'medium',
+    severity: riskLevel === 'critical' ? 'critical' : riskLevel === 'warning' ? 'high' : 'medium',
+    riskLevel,
+    shortageProbability: Number(forecast?.risk_assessment?.shortage_probability || 0),
+    confidenceLabel: forecast?.confidence_label || 'medium',
+    daysUntilShortage: forecast?.risk_assessment?.days_until_shortage || null,
+    recommendedActions: forecast?.recommended_actions || [],
   };
 };
 
@@ -150,13 +159,17 @@ const getRecommendedStock = async (req, res) => {
     const recommendations = payload.alerts.map((alert) => {
       const bloodType = alert.bloodType || alert.blood_type;
       const shortage = Number(alert.shortage || 0);
+      const recommendedActions = alert.recommendedActions || alert.recommended_actions || [];
       return {
         bloodType,
-        action: shortage > 0 ? `Increase stock by ${shortage} units` : 'Maintain current stock',
-        priority: alert.severity || 'medium',
+        action: recommendedActions[0] || (shortage > 0 ? `Increase stock by ${shortage} units` : 'Maintain current stock'),
+        actionPlan: recommendedActions,
+        priority: alert.riskLevel || alert.risk_level || alert.severity || 'medium',
         suggestedDonors: shortage > 0 ? Math.max(5, Math.ceil(shortage / 2)) : 0,
         notificationsSent: notifications.results.find((item) => item.bloodType === bloodType)?.notificationsSent || 0,
         emailsSent: notifications.results.find((item) => item.bloodType === bloodType)?.emailsSent || 0,
+        shortageProbability: Number(alert.shortageProbability || alert.shortage_probability || 0),
+        confidenceLabel: alert.confidenceLabel || alert.confidence_label || 'medium',
       };
     });
 

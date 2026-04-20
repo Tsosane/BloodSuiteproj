@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const {
+  createDonor,
   getDonors,
   getDonorProfile,
   updateDonorProfile,
@@ -15,6 +16,7 @@ const { rbacMiddleware, ROLES } = require('../middleware/rbac');
 router.use(authMiddleware);
 
 router.get('/', rbacMiddleware([ROLES.ADMIN, ROLES.MANAGER]), getDonors);
+router.post('/register', rbacMiddleware([ROLES.ADMIN, ROLES.MANAGER, ROLES.HOSPITAL]), createDonor);
 router.get('/me', rbacMiddleware([ROLES.DONOR]), getDonorProfile);
 router.put('/me', rbacMiddleware([ROLES.DONOR]), updateDonorProfile);
 router.get('/nearby', rbacMiddleware([ROLES.HOSPITAL, ROLES.ADMIN]), getNearbyDonors);

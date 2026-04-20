@@ -34,6 +34,23 @@ class EnsembleModel:
         total_weight = sum(self.weights.values())
         if total_weight > 0:
             self.weights = {name: weight / total_weight for name, weight in self.weights.items()}
+
+    def _summarize_model_result(self, label, key, result):
+        if not result:
+            return None
+
+        forecasts = result.get('forecasts', [])
+        return {
+            'label': label,
+            'available': True,
+            'weight': round(float(self.weights.get(key, 0.0)), 3),
+            'total_predicted_demand': int(sum(item.get('predicted_demand', 0) for item in forecasts)),
+            'average_daily_demand': round(
+                float(np.mean([item.get('predicted_demand', 0) for item in forecasts])) if forecasts else 0.0,
+                2,
+            ),
+            'confidence_level': float(result.get('confidence_level', 0.8)),
+        }
     
     def train(self, historical_data):
         """Train all three models"""
@@ -142,6 +159,15 @@ class EnsembleModel:
         
         # Calculate model weights used
         model_weights = self.weights.copy()
+        model_breakdown = {}
+
+        arima_summary = self._summarize_model_result('ARIMA', 'arima', arima_result)
+        prophet_summary = self._summarize_model_result('Prophet', 'prophet', prophet_result)
+        lstm_summary = self._summarize_model_result('LSTM', 'lstm', lstm_result)
+
+        for summary in [arima_summary, prophet_summary, lstm_summary]:
+            if summary:
+                model_breakdown[summary['label']] = summary
         
         total_predicted = sum(f['predicted_demand'] for f in forecasts)
         
@@ -152,11 +178,13 @@ class EnsembleModel:
             'model_weights': model_weights,
             'total_predicted_demand': total_predicted,
             'confidence_level': 0.8,
+            'ensemble_method': 'weighted_average',
             'models_available': {
                 'arima': self.arima.is_trained,
                 'prophet': self.prophet.is_trained,
                 'lstm': self.lstm.is_trained if self.lstm is not None else False
-            }
+            },
+            'model_breakdown': model_breakdown,
         }
     
     def load_models(self):

@@ -24,6 +24,7 @@ import Requests from './pages/Hospital/Requests';
 import RequestForm from './pages/Hospital/RequestForm';
 import RequestTracker from './pages/Hospital/RequestTracker';
 import NearbyDonors from './pages/Hospital/NearbyDonor';
+import RegisterDonor from './pages/Hospital/RegisterDonor';
 
 // Donor Pages
 import DonorDashboard from './pages/Donor/DonorDashboard';
@@ -77,6 +78,7 @@ function App() {
                   <Route path="/requests/track" element={<RequestTracker />} />
                   <Route path="/requests/history" element={<RequestHistory />} />
                   <Route path="/donors/nearby" element={<NearbyDonors />} />
+                  <Route path="/donors/register" element={<RegisterDonor />} />
 
                   {/* Donor Routes */}
                   <Route path="/donor/dashboard" element={<DonorDashboard />} />

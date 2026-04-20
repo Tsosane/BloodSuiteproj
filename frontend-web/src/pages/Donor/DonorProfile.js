@@ -1,156 +1,262 @@
 // src/pages/Donor/DonorProfile.js
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Box,
-  Paper,
-  Typography,
-  Grid,
-  TextField,
-  Button,
-  Avatar,
-  Chip,
-  Divider,
   Alert,
+  Avatar,
+  Box,
+  Button,
+  Chip,
   CircularProgress,
+  Divider,
+  FormControl,
+  FormControlLabel,
+  Grid,
   IconButton,
   InputAdornment,
-  FormControl,
   InputLabel,
-  Select,
   MenuItem,
+  Paper,
+  Select,
   Switch,
-  FormControlLabel,
+  TextField,
+  Typography,
 } from '@mui/material';
 import {
-  Person as PersonIcon,
-  Email as EmailIcon,
-  Phone as PhoneIcon,
-  LocationOn as LocationIcon,
-  Bloodtype as BloodIcon,
   CalendarToday as CalendarIcon,
-  Edit as EditIcon,
-  Save as SaveIcon,
   Cancel as CancelIcon,
   CheckCircle as CheckIcon,
-  Warning as WarningIcon,
+  Edit as EditIcon,
+  Email as EmailIcon,
+  LocationOn as LocationIcon,
   MyLocation as MyLocationIcon,
+  Person as PersonIcon,
+  Phone as PhoneIcon,
+  Save as SaveIcon,
+  Warning as WarningIcon,
 } from '@mui/icons-material';
+import donorService from '../../services/donorService';
+
+const bloodTypes = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+const genders = ['male', 'female', 'other'];
+
+const defaultProfile = {
+  id: '',
+  fullName: '',
+  email: '',
+  phone: '',
+  bloodType: '',
+  dateOfBirth: '',
+  gender: '',
+  address: '',
+  latitude: '',
+  longitude: '',
+  lastDonation: '',
+  totalDonations: 0,
+  isEligible: true,
+  nextEligibleDate: null,
+  daysRemaining: 0,
+  notificationsEnabled: true,
+  emergencyAlertsEnabled: true,
+};
+
+const notificationPreferenceKey = (donorId) => `bloodSuiteDonorPrefs:${donorId}`;
+
+const mapProfileFromApi = (payload = {}) => {
+  const eligibility = payload.eligibility || {};
+  return {
+    id: payload.id || '',
+    fullName: payload.full_name || '',
+    email: payload.user?.email || '',
+    phone: payload.phone || '',
+    bloodType: payload.blood_type || '',
+    dateOfBirth: payload.date_of_birth || '',
+    gender: payload.gender || '',
+    address: payload.address || '',
+    latitude: payload.latitude ?? '',
+    longitude: payload.longitude ?? '',
+    lastDonation: payload.last_donation_date || '',
+    totalDonations: Number(payload.donation_count || 0),
+    isEligible: eligibility.is_eligible ?? payload.is_eligible ?? true,
+    nextEligibleDate: eligibility.next_eligible_date || null,
+    daysRemaining: Number(eligibility.days_remaining || 0),
+    notificationsEnabled: true,
+    emergencyAlertsEnabled: true,
+  };
+};
 
 const DonorProfile = () => {
   const [isEditing, setIsEditing] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
-  
-  const [profile, setProfile] = useState({
-    fullName: 'John Doe',
-    email: 'john.doe@email.com',
-    phone: '+266 1234 5678',
-    bloodType: 'O+',
-    dateOfBirth: '1990-05-15',
-    gender: 'male',
-    address: 'Maseru, Lesotho',
-    latitude: '-29.3167',
-    longitude: '27.4833',
-    lastDonation: '2024-02-15',
-    totalDonations: 8,
-    isEligible: true,
-    nextEligibleDate: null,
-    notificationsEnabled: true,
-    emergencyAlertsEnabled: true,
-  });
+  const [profile, setProfile] = useState(defaultProfile);
+  const [originalProfile, setOriginalProfile] = useState(defaultProfile);
 
-  const [originalProfile, setOriginalProfile] = useState({});
-
-  const bloodTypes = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
-  const genders = ['male', 'female', 'other'];
-
-  useEffect(() => {
-    setOriginalProfile(profile);
-    calculateEligibility();
-  }, []);
-
-  const calculateEligibility = () => {
-    if (!profile.lastDonation) {
-      setProfile(prev => ({ ...prev, isEligible: true, nextEligibleDate: null }));
-      return;
-    }
-
-    const lastDonationDate = new Date(profile.lastDonation);
-    const today = new Date();
-    const daysSinceDonation = Math.floor((today - lastDonationDate) / (1000 * 60 * 60 * 24));
-
-    if (daysSinceDonation >= 56) {
-      setProfile(prev => ({ ...prev, isEligible: true, nextEligibleDate: null }));
-    } else {
-      const nextDate = new Date(lastDonationDate);
-      nextDate.setDate(lastDonationDate.getDate() + 56);
-      setProfile(prev => ({ ...prev, isEligible: false, nextEligibleDate: nextDate.toISOString().split('T')[0] }));
-    }
-  };
-
-  const handleEdit = () => {
-    setOriginalProfile(profile);
-    setIsEditing(true);
-  };
-
-  const handleCancel = () => {
-    setProfile(originalProfile);
-    setIsEditing(false);
-    setError('');
-  };
-
-  const handleSave = async () => {
+  const loadProfile = async () => {
     setLoading(true);
     setError('');
-    
+
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Validate phone number
-      if (!profile.phone.match(/^\+266 \d{4} \d{4}$/)) {
-        setError('Phone number must be in format: +266 1234 5678');
-        setLoading(false);
-        return;
-      }
-      
-      setSuccess('Profile updated successfully!');
-      setIsEditing(false);
-      
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (err) {
-      setError('Failed to update profile. Please try again.');
+      const response = await donorService.getMyProfile();
+      const mappedProfile = mapProfileFromApi(response.data || {});
+      const savedPreferences = mappedProfile.id
+        ? JSON.parse(localStorage.getItem(notificationPreferenceKey(mappedProfile.id)) || '{}')
+        : {};
+      const mergedProfile = {
+        ...mappedProfile,
+        notificationsEnabled: savedPreferences.notificationsEnabled ?? true,
+        emergencyAlertsEnabled: savedPreferences.emergencyAlertsEnabled ?? true,
+      };
+
+      setProfile(mergedProfile);
+      setOriginalProfile(mergedProfile);
+    } catch (loadError) {
+      setError(loadError.error || loadError.message || 'Unable to load your donor profile.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleChange = (e) => {
-    setProfile({ ...profile, [e.target.name]: e.target.value });
+  useEffect(() => {
+    loadProfile();
+  }, []);
+
+  const handleEdit = () => {
+    setOriginalProfile(profile);
+    setIsEditing(true);
+    setSuccess('');
+    setError('');
+  };
+
+  const handleCancel = () => {
+    setProfile(originalProfile);
+    setIsEditing(false);
+    setSuccess('');
+    setError('');
+  };
+
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+    setProfile((current) => ({ ...current, [name]: value }));
+  };
+
+  const handlePreferenceChange = (name, checked) => {
+    setProfile((current) => ({ ...current, [name]: checked }));
   };
 
   const handleUseCurrentLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition((position) => {
-        setProfile({
-          ...profile,
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported by your browser.');
+      return;
+    }
+
+    setLocating(true);
+    setError('');
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setProfile((current) => ({
+          ...current,
           latitude: position.coords.latitude.toFixed(6),
           longitude: position.coords.longitude.toFixed(6),
-        });
+        }));
+        setLocating(false);
+        setSuccess('Current location captured successfully.');
+      },
+      () => {
+        setLocating(false);
+        setError('Unable to read your current location. Please allow location access and try again.');
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+      }
+    );
+  };
+
+  const validateProfile = () => {
+    if (!profile.fullName || !profile.bloodType || !profile.phone) {
+      return 'Full name, phone number, and blood type are required.';
+    }
+
+    if (profile.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.email)) {
+      return 'Please enter a valid email address.';
+    }
+
+    if (profile.phone && !/^[+\d][\d\s()-]{6,19}$/.test(profile.phone)) {
+      return 'Please enter a valid phone number.';
+    }
+
+    return '';
+  };
+
+  const handleSave = async () => {
+    const validationError = validateProfile();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const response = await donorService.updateDonorProfile({
+        email: profile.email,
+        full_name: profile.fullName,
+        blood_type: profile.bloodType,
+        date_of_birth: profile.dateOfBirth || null,
+        gender: profile.gender || null,
+        phone: profile.phone,
+        address: profile.address || null,
+        latitude: profile.latitude || null,
+        longitude: profile.longitude || null,
       });
+
+      const mappedProfile = mapProfileFromApi(response.data || {});
+      const mergedProfile = {
+        ...mappedProfile,
+        notificationsEnabled: profile.notificationsEnabled,
+        emergencyAlertsEnabled: profile.emergencyAlertsEnabled,
+      };
+
+      if (mergedProfile.id) {
+        localStorage.setItem(
+          notificationPreferenceKey(mergedProfile.id),
+          JSON.stringify({
+            notificationsEnabled: mergedProfile.notificationsEnabled,
+            emergencyAlertsEnabled: mergedProfile.emergencyAlertsEnabled,
+          })
+        );
+      }
+
+      setProfile(mergedProfile);
+      setOriginalProfile(mergedProfile);
+      setIsEditing(false);
+      setSuccess('Profile updated successfully.');
+    } catch (saveError) {
+      setError(saveError.error || saveError.message || 'Failed to update profile. Please try again.');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const getDaysUntilEligible = () => {
-    if (!profile.nextEligibleDate) return 0;
-    const next = new Date(profile.nextEligibleDate);
-    const today = new Date();
-    return Math.ceil((next - today) / (1000 * 60 * 60 * 24));
-  };
+  const getDaysUntilEligible = () => Number(profile.daysRemaining || 0);
+
+  if (loading) {
+    return (
+      <Box display="flex" justifyContent="center" py={8}>
+        <CircularProgress sx={{ color: '#d32f2f' }} />
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: 3 }}>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3} flexWrap="wrap" gap={2}>
         <Typography variant="h4" sx={{ fontWeight: 700, color: '#d32f2f' }}>
           My Profile
         </Typography>
@@ -177,10 +283,10 @@ const DonorProfile = () => {
               variant="contained"
               startIcon={<SaveIcon />}
               onClick={handleSave}
-              disabled={loading}
+              disabled={saving}
               sx={{ bgcolor: '#d32f2f', '&:hover': { bgcolor: '#b71c1c' } }}
             >
-              {loading ? <CircularProgress size={24} /> : 'Save Changes'}
+              {saving ? <CircularProgress size={22} sx={{ color: '#fff' }} /> : 'Save Changes'}
             </Button>
           </Box>
         )}
@@ -199,9 +305,8 @@ const DonorProfile = () => {
       )}
 
       <Grid container spacing={3}>
-        {/* Profile Picture and Status */}
         <Grid item xs={12} md={4}>
-          <Paper sx={{ p: 3, textAlign: 'center', borderRadius: 2 }}>
+          <Paper sx={{ p: 3, textAlign: 'center', borderRadius: 2, height: '100%' }}>
             <Avatar
               sx={{
                 width: 120,
@@ -212,18 +317,18 @@ const DonorProfile = () => {
                 fontSize: 48,
               }}
             >
-              {profile.fullName.charAt(0)}
+              {profile.fullName?.charAt(0) || 'D'}
             </Avatar>
             <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              {profile.fullName}
+              {profile.fullName || 'Donor'}
             </Typography>
             <Chip
-              label={`Blood Type: ${profile.bloodType}`}
+              label={`Blood Type: ${profile.bloodType || 'Unknown'}`}
               sx={{ bgcolor: '#d32f2f20', color: '#d32f2f', mt: 1 }}
             />
-            
+
             <Divider sx={{ my: 2 }} />
-            
+
             <Typography variant="body2" color="text.secondary" gutterBottom>
               Donation Status
             </Typography>
@@ -241,13 +346,13 @@ const DonorProfile = () => {
                   sx={{ bgcolor: '#fff3e0', color: '#ed6c02' }}
                 />
                 <Typography variant="caption" display="block" sx={{ mt: 1 }}>
-                  Eligible on: {profile.nextEligibleDate}
+                  Eligible on: {profile.nextEligibleDate || 'Unavailable'}
                 </Typography>
               </Box>
             )}
-            
+
             <Divider sx={{ my: 2 }} />
-            
+
             <Typography variant="body2" color="text.secondary">
               Total Donations
             </Typography>
@@ -260,13 +365,12 @@ const DonorProfile = () => {
           </Paper>
         </Grid>
 
-        {/* Profile Details */}
         <Grid item xs={12} md={8}>
           <Paper sx={{ p: 3, borderRadius: 2 }}>
             <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, color: '#d32f2f' }}>
               Personal Information
             </Typography>
-            
+
             <Grid container spacing={3}>
               <Grid item xs={12} md={6}>
                 <TextField
@@ -330,8 +434,10 @@ const DonorProfile = () => {
                     onChange={handleChange}
                     label="Blood Type"
                   >
-                    {bloodTypes.map(type => (
-                      <MenuItem key={type} value={type}>{type}</MenuItem>
+                    {bloodTypes.map((type) => (
+                      <MenuItem key={type} value={type}>
+                        {type}
+                      </MenuItem>
                     ))}
                   </Select>
                 </FormControl>
@@ -364,7 +470,7 @@ const DonorProfile = () => {
                     onChange={handleChange}
                     label="Gender"
                   >
-                    {genders.map(gender => (
+                    {genders.map((gender) => (
                       <MenuItem key={gender} value={gender}>
                         {gender.charAt(0).toUpperCase() + gender.slice(1)}
                       </MenuItem>
@@ -399,11 +505,12 @@ const DonorProfile = () => {
                   value={profile.latitude}
                   onChange={handleChange}
                   disabled={!isEditing}
+                  helperText="Use your device location to fill coordinates automatically."
                   InputProps={{
                     endAdornment: isEditing && (
                       <InputAdornment position="end">
-                        <IconButton onClick={handleUseCurrentLocation}>
-                          <MyLocationIcon />
+                        <IconButton onClick={handleUseCurrentLocation} disabled={locating}>
+                          {locating ? <CircularProgress size={18} /> : <MyLocationIcon />}
                         </IconButton>
                       </InputAdornment>
                     ),
@@ -427,31 +534,31 @@ const DonorProfile = () => {
             <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, color: '#d32f2f' }}>
               Notification Preferences
             </Typography>
-            
+
             <Grid container spacing={2}>
               <Grid item xs={12}>
                 <FormControlLabel
-                  control={
+                  control={(
                     <Switch
                       checked={profile.notificationsEnabled}
-                      onChange={(e) => setProfile({ ...profile, notificationsEnabled: e.target.checked })}
+                      onChange={(event) => handlePreferenceChange('notificationsEnabled', event.target.checked)}
                       disabled={!isEditing}
                       sx={{ '& .MuiSwitch-switchBase.Mui-checked': { color: '#d32f2f' } }}
                     />
-                  }
+                  )}
                   label="Receive General Notifications"
                 />
               </Grid>
               <Grid item xs={12}>
                 <FormControlLabel
-                  control={
+                  control={(
                     <Switch
                       checked={profile.emergencyAlertsEnabled}
-                      onChange={(e) => setProfile({ ...profile, emergencyAlertsEnabled: e.target.checked })}
+                      onChange={(event) => handlePreferenceChange('emergencyAlertsEnabled', event.target.checked)}
                       disabled={!isEditing}
                       sx={{ '& .MuiSwitch-switchBase.Mui-checked': { color: '#d32f2f' } }}
                     />
-                  }
+                  )}
                   label="Receive Emergency Alerts"
                 />
               </Grid>

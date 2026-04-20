@@ -31,22 +31,14 @@ import {
   TableRow,
 } from '@mui/material';
 import {
-  TrendingUp as TrendingUpIcon,
-  TrendingDown as TrendingDownIcon,
-  Bloodtype as BloodIcon,
   Warning as WarningIcon,
   Download as DownloadIcon,
   Refresh as RefreshIcon,
   Timeline as TimelineIcon,
-  CalendarToday as CalendarIcon,
-  CheckCircle as CheckIcon,
-  Schedule as ScheduleIcon,
   Analytics as AnalyticsIcon,
 } from '@mui/icons-material';
 import {
-  LineChart,
   Line,
-  AreaChart,
   Area,
   XAxis,
   YAxis,
@@ -68,9 +60,12 @@ const ForecastReports = () => {
   const [activeTab, setActiveTab] = useState(0);
   const [forecastDataItems, setForecastDataItems] = useState([]);
   const [allForecastSummary, setAllForecastSummary] = useState([]);
+  const [forecastDetails, setForecastDetails] = useState(null);
   const [shortageAlerts, setShortageAlerts] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
   const [modelAccuracy, setModelAccuracy] = useState({ mape: 0, mae: 0, rmse: 0, lastUpdated: null });
+  const [modelMetrics, setModelMetrics] = useState({});
+  const [evaluationTargets, setEvaluationTargets] = useState({});
   const [isRetraining, setIsRetraining] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [exportStatus, setExportStatus] = useState(null);
@@ -100,6 +95,7 @@ const ForecastReports = () => {
     setExportStatus(null);
     setForecastDataItems([]);
     setAllForecastSummary([]);
+    setForecastDetails(null);
     try {
       let combinedNotificationSummary = null;
 
@@ -113,6 +109,7 @@ const ForecastReports = () => {
         if (selectedBloodType === 'all') {
           setAllForecastSummary(data.forecasts || []);
           setForecastDataItems([]);
+          setForecastDetails(null);
         } else {
           const forecastItems = (data.forecasts || []).map((item) => ({
             ...item,
@@ -123,6 +120,7 @@ const ForecastReports = () => {
           }));
           setForecastDataItems(forecastItems);
           setAllForecastSummary([]);
+          setForecastDetails(data);
         }
       }
 
@@ -139,7 +137,13 @@ const ForecastReports = () => {
           predictedDemand: alert.predictedDemand || alert.predicted_demand_7d || 0,
           shortage: alert.shortage || 0,
           severity: alert.severity || 'medium',
+          riskLevel: alert.riskLevel || alert.risk_level || alert.severity || 'medium',
+          confidenceLabel: alert.confidenceLabel || alert.confidence_label || 'medium',
+          shortageProbability: Number(alert.shortageProbability || alert.shortage_probability || 0),
           daysUntilShortage: alert.daysUntilShortage || alert.days_until_shortage || 7,
+          recommendedActions: alert.recommendedActions || alert.recommended_actions || [],
+          alertMessage: alert.alertMessage || alert.alert_message || '',
+          bufferUnits: Number(alert.bufferUnits || alert.buffer_units || 0),
         })));
       }
 
@@ -156,13 +160,16 @@ const ForecastReports = () => {
 
       const accuracyResponse = await forecastService.getForecastAccuracy();
       if (accuracyResponse?.success) {
-        const ensemble = accuracyResponse.data?.models?.Ensemble || {};
+        const accuracyData = accuracyResponse.data || {};
+        const ensemble = accuracyData.models?.Ensemble || {};
         setModelAccuracy({
           mape: ensemble.mape || 0,
           mae: ensemble.mae || 0,
           rmse: ensemble.rmse || 0,
-          lastUpdated: accuracyResponse.data?.last_updated || null,
+          lastUpdated: accuracyData.last_updated || null,
         });
+        setModelMetrics(accuracyData.models || {});
+        setEvaluationTargets(accuracyData.evaluation_targets || {});
       }
 
       setNotificationSummary(combinedNotificationSummary);
@@ -215,9 +222,15 @@ const ForecastReports = () => {
   const filteredRecommendations = selectedBloodType === 'all'
     ? recommendations
     : recommendations.filter((recommendation) => recommendation.bloodType === selectedBloodType);
-  const highSeverityAlerts = filteredShortageAlerts.filter((alert) => alert.severity === 'high');
+  const highSeverityAlerts = filteredShortageAlerts.filter((alert) => ['high', 'critical'].includes(alert.severity));
   const hasShortage = filteredShortageAlerts.length > 0;
   const showBounds = currentData.some((item) => item.lowerBound != null);
+  const selectedForecastSummary = selectedBloodType === 'all' ? null : forecastDetails;
+  const selectedRiskAssessment = selectedForecastSummary?.risk_assessment || null;
+  const selectedFeatureContext = selectedForecastSummary?.feature_context || null;
+  const selectedTrendSummary = selectedForecastSummary?.trend_summary || null;
+  const selectedMethodology = selectedForecastSummary?.methodology_summary || null;
+  const selectedModelBreakdown = Object.values(selectedForecastSummary?.model_breakdown || {});
 
   const buildExportRows = () => {
     if (selectedBloodType === 'all') {
@@ -227,6 +240,8 @@ const ForecastReports = () => {
         totalPredictedDemand: item.total_predicted_demand,
         currentStock: item.current_stock,
         shortageAlert: item.shortage_alert ? 'Yes' : 'No',
+        riskLevel: item.risk_assessment?.risk_level || 'normal',
+        confidenceLabel: item.confidence_label || 'medium',
       }));
     }
 
@@ -249,6 +264,8 @@ const ForecastReports = () => {
       currentStock: Number(item.current_stock || 0),
       shortageGap: Math.max(0, Number(item.total_predicted_demand || 0) - Number(item.current_stock || 0)),
       shortageAlert: item.shortage_alert ? 'Yes' : 'No',
+      riskLevel: item.risk_assessment?.risk_level || 'normal',
+      confidenceLabel: item.confidence_label || 'medium',
     }))
     : currentData.map((item) => ({
       day: item.day,
@@ -389,7 +406,10 @@ const ForecastReports = () => {
 
   const getSeverityColor = (severity) => {
     switch(severity) {
+      case 'critical': return '#b71c1c';
       case 'high': return '#f44336';
+      case 'warning': return '#f44336';
+      case 'watch': return '#ff9800';
       case 'medium': return '#ff9800';
       default: return '#4caf50';
     }
@@ -432,6 +452,8 @@ const ForecastReports = () => {
                 <TableCell sx={{ fontWeight: 700 }}>Predicted Demand</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Current Stock</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Shortage Gap</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Risk Level</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Confidence</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Alert</TableCell>
               </>
             ) : (
@@ -450,7 +472,7 @@ const ForecastReports = () => {
         <TableBody>
           {forecastTableRows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={selectedBloodType === 'all' ? 5 : 7} align="center">
+              <TableCell colSpan={selectedBloodType === 'all' ? 7 : 7} align="center">
                 No forecast data available for the selected filters.
               </TableCell>
             </TableRow>
@@ -462,6 +484,18 @@ const ForecastReports = () => {
                   <TableCell>{row.totalPredictedDemand}</TableCell>
                   <TableCell>{row.currentStock}</TableCell>
                   <TableCell>{row.shortageGap}</TableCell>
+                  <TableCell>
+                    <Chip
+                      size="small"
+                      label={String(row.riskLevel || 'normal').toUpperCase()}
+                      sx={{
+                        bgcolor: `${getSeverityColor(row.riskLevel)}20`,
+                        color: getSeverityColor(row.riskLevel),
+                        fontWeight: 700,
+                      }}
+                    />
+                  </TableCell>
+                  <TableCell>{String(row.confidenceLabel || 'medium').toUpperCase()}</TableCell>
                   <TableCell>
                     <Chip
                       size="small"
@@ -597,6 +631,8 @@ const ForecastReports = () => {
                     <Typography variant="body2" color="text.secondary">Current Stock: {alert.currentStock} units</Typography>
                     <Typography variant="body2" color="text.secondary">Predicted Demand: {alert.predictedDemand} units</Typography>
                     <Typography variant="body2" sx={{ color: getSeverityColor(alert.severity), fontWeight: 600 }}>Shortage: {Math.abs(alert.shortage)} units</Typography>
+                    <Typography variant="body2" color="text.secondary">Risk: {String(alert.riskLevel || alert.severity).toUpperCase()}</Typography>
+                    <Typography variant="body2" color="text.secondary">Confidence: {String(alert.confidenceLabel || 'medium').toUpperCase()}</Typography>
                   </Box>
                   <Avatar sx={{ bgcolor: `${getSeverityColor(alert.severity)}20`, color: getSeverityColor(alert.severity) }}>
                     <WarningIcon />
@@ -604,6 +640,11 @@ const ForecastReports = () => {
                 </Box>
                 <LinearProgress variant="determinate" value={alert.predictedDemand > 0 ? Math.min(100, (alert.currentStock / alert.predictedDemand) * 100) : 0} sx={{ mt: 2, height: 6, borderRadius: 3, bgcolor: '#ffe0e0', '& .MuiLinearProgress-bar': { bgcolor: getSeverityColor(alert.severity) } }} />
                 <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>Shortage expected in {alert.daysUntilShortage} days</Typography>
+                {alert.alertMessage && (
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                    {alert.alertMessage}
+                  </Typography>
+                )}
               </CardContent>
             </Card>
           </Grid>
@@ -629,6 +670,62 @@ const ForecastReports = () => {
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               Prediction results are shown in table form first for easier review, with the chart kept below for quick visual comparison.
             </Typography>
+            {selectedForecastSummary && (
+              <Grid container spacing={2} sx={{ mb: 3 }}>
+                <Grid item xs={12} sm={6} md={3}>
+                  <Paper sx={{ p: 2, height: '100%' }}>
+                    <Typography variant="caption" color="text.secondary">Total Predicted Demand</Typography>
+                    <Typography variant="h5" sx={{ fontWeight: 700, color: '#d32f2f' }}>
+                      {selectedForecastSummary.total_predicted_demand || 0}
+                    </Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <Paper sx={{ p: 2, height: '100%' }}>
+                    <Typography variant="caption" color="text.secondary">Current Stock</Typography>
+                    <Typography variant="h5" sx={{ fontWeight: 700, color: '#2e7d32' }}>
+                      {selectedForecastSummary.current_stock || 0}
+                    </Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <Paper sx={{ p: 2, height: '100%' }}>
+                    <Typography variant="caption" color="text.secondary">Risk Level</Typography>
+                    <Typography variant="h5" sx={{ fontWeight: 700, color: getSeverityColor(selectedRiskAssessment?.risk_level) }}>
+                      {String(selectedRiskAssessment?.risk_level || 'normal').toUpperCase()}
+                    </Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <Paper sx={{ p: 2, height: '100%' }}>
+                    <Typography variant="caption" color="text.secondary">Confidence</Typography>
+                    <Typography variant="h5" sx={{ fontWeight: 700 }}>
+                      {String(selectedForecastSummary.confidence_label || 'medium').toUpperCase()}
+                    </Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12}>
+                  <Alert severity={selectedRiskAssessment?.risk_level === 'critical' ? 'error' : selectedRiskAssessment?.risk_level === 'warning' ? 'warning' : 'info'}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                      {selectedRiskAssessment?.alert_message || 'Forecast context loaded successfully.'}
+                    </Typography>
+                    {selectedTrendSummary?.summary && (
+                      <Typography variant="body2" sx={{ mt: 0.5 }}>
+                        {selectedTrendSummary.summary}
+                      </Typography>
+                    )}
+                    {selectedFeatureContext && (
+                      <Typography variant="body2" sx={{ mt: 0.5 }}>
+                        Recent averages: 7-day {selectedFeatureContext.recent_average_7d}, 30-day {selectedFeatureContext.recent_average_30d}.
+                        {selectedFeatureContext.upcoming_holiday
+                          ? ` Upcoming holiday: ${selectedFeatureContext.upcoming_holiday} in ${selectedFeatureContext.days_until_nearest_holiday} day(s).`
+                          : ''}
+                      </Typography>
+                    )}
+                  </Alert>
+                </Grid>
+              </Grid>
+            )}
             {isLoading ? (
               <Box sx={{ py: 10, textAlign: 'center' }}>
                 <CircularProgress sx={{ color: '#d32f2f' }} />
@@ -664,6 +761,8 @@ const ForecastReports = () => {
                             <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>{item.blood_type}</Typography>
                             <Typography variant="body2" color="text.secondary">Predicted demand: {item.total_predicted_demand}</Typography>
                             <Typography variant="body2" color="text.secondary">Current stock: {item.current_stock}</Typography>
+                            <Typography variant="body2" color="text.secondary">Risk: {String(item.risk_assessment?.risk_level || 'normal').toUpperCase()}</Typography>
+                            <Typography variant="body2" color="text.secondary">Confidence: {String(item.confidence_label || 'medium').toUpperCase()}</Typography>
                           </Paper>
                         </Grid>
                       ))}
@@ -720,6 +819,16 @@ const ForecastReports = () => {
                         <Chip label={rec.bloodType} size="small" sx={{ bgcolor: '#d32f2f20', color: '#d32f2f', mb: 1 }} />
                         <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{rec.action}</Typography>
                         <Typography variant="body2" color="text.secondary">Suggested donors: {rec.suggestedDonors}+</Typography>
+                        <Typography variant="body2" color="text.secondary">Priority: {String(rec.priority || 'medium').toUpperCase()}</Typography>
+                        <Typography variant="body2" color="text.secondary">Confidence: {String(rec.confidenceLabel || 'medium').toUpperCase()}</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Shortage probability: {Math.round(Number(rec.shortageProbability || 0) * 100)}%
+                        </Typography>
+                        {Array.isArray(rec.actionPlan) && rec.actionPlan.map((actionLine, index) => (
+                          <Typography key={`${rec.bloodType}-action-${index}`} variant="body2" color="text.secondary">
+                            {index + 1}. {actionLine}
+                          </Typography>
+                        ))}
                       </Box>
                       <Button
                         variant="outlined"
@@ -749,8 +858,107 @@ const ForecastReports = () => {
               <Grid item xs={12} md={3}><Paper sx={{ p: 2, textAlign: 'center' }}><Typography variant="body2" color="text.secondary">Last Updated</Typography><Typography variant="body2" sx={{ fontWeight: 600 }}>{modelAccuracy.lastUpdated}</Typography><Typography variant="caption">Daily at 2:00 AM</Typography></Paper></Grid>
             </Grid>
             <Divider sx={{ my: 3 }} />
-            <Typography variant="subtitle2" gutterBottom>Model Information</Typography>
-            <Typography variant="body2" color="text.secondary">Ensemble model combining ARIMA (trend), Prophet (seasonality), and LSTM (complex patterns). Weights adjusted based on recent performance.</Typography>
+            <Typography variant="subtitle2" gutterBottom>Accuracy By Model</Typography>
+            <TableContainer component={Paper} variant="outlined" sx={{ mb: 3, borderRadius: 2 }}>
+              <Table size="small">
+                <TableHead sx={{ bgcolor: '#fff5f5' }}>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 700 }}>Model</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>MAPE</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>MAE</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>RMSE</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {Object.keys(modelMetrics).length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} align="center">No model metrics available yet.</TableCell>
+                    </TableRow>
+                  ) : Object.entries(modelMetrics).map(([modelName, metrics]) => (
+                    <TableRow key={modelName}>
+                      <TableCell>{modelName}</TableCell>
+                      <TableCell>{metrics?.mape ?? 'N/A'}</TableCell>
+                      <TableCell>{metrics?.mae ?? 'N/A'}</TableCell>
+                      <TableCell>{metrics?.rmse ?? 'N/A'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+
+            {selectedModelBreakdown.length > 0 && (
+              <>
+                <Typography variant="subtitle2" gutterBottom>Forecast Model Breakdown For {selectedBloodType}</Typography>
+                <TableContainer component={Paper} variant="outlined" sx={{ mb: 3, borderRadius: 2 }}>
+                  <Table size="small">
+                    <TableHead sx={{ bgcolor: '#fff5f5' }}>
+                      <TableRow>
+                        <TableCell sx={{ fontWeight: 700 }}>Model</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>Weight</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>Average Daily Demand</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>Total Predicted Demand</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>Confidence</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {selectedModelBreakdown.map((model) => (
+                        <TableRow key={model.label}>
+                          <TableCell>{model.label}</TableCell>
+                          <TableCell>{model.weight}</TableCell>
+                          <TableCell>{model.average_daily_demand}</TableCell>
+                          <TableCell>{model.total_predicted_demand}</TableCell>
+                          <TableCell>{Math.round(Number(model.confidence_level || 0) * 100)}%</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </>
+            )}
+
+            <Grid container spacing={2}>
+              <Grid item xs={12} md={6}>
+                <Paper sx={{ p: 2, height: '100%' }}>
+                  <Typography variant="subtitle2" gutterBottom>Methodology Summary</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Ensemble model combining ARIMA (trend), Prophet (seasonality and holidays), and LSTM (complex sequence patterns).
+                  </Typography>
+                  {selectedMethodology && (
+                    <>
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                        Strategy: {selectedMethodology.ensemble_strategy || 'weighted_average'}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Training window: {selectedMethodology.training_window_months || 24} months
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Forecast horizon days: {selectedMethodology.forecast_horizon_days || 'N/A'}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Confidence note: {selectedMethodology.confidence_interval_note}
+                      </Typography>
+                    </>
+                  )}
+                </Paper>
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <Paper sx={{ p: 2, height: '100%' }}>
+                  <Typography variant="subtitle2" gutterBottom>Evaluation Targets</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    MAPE target: {evaluationTargets.mape_target || '< 20%'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    MAE target: {evaluationTargets.mae_target || '< 15%'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Shortage prediction rate target: {evaluationTargets.shortage_prediction_rate_target || '> 80%'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Wastage reduction target: {evaluationTargets.wastage_reduction_target || '> 25%'}
+                  </Typography>
+                </Paper>
+              </Grid>
+            </Grid>
           </Box>
         )}
       </Paper>

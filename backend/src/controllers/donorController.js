@@ -1,17 +1,94 @@
 // src/controllers/donorController.js
-const { Donor, User, BloodInventory } = require('../models');
-const { haversineDistance } = require('../utils/haversine');
-const { calculateEligibility } = require('../utils/eligibility');
 const { Op } = require('sequelize');
+const { sequelize } = require('../config/database');
+const { Donor, User, BloodInventory, Hospital } = require('../models');
+const { haversineDistance } = require('../utils/haversine');
 
-// Get all donors (admin/manager only)
+const DONOR_FIELDS = [
+  'full_name',
+  'blood_type',
+  'date_of_birth',
+  'gender',
+  'phone',
+  'address',
+  'latitude',
+  'longitude',
+  'medical_history',
+];
+
+const sanitizeText = (value) => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null) {
+    return null;
+  }
+
+  const trimmed = String(value).trim();
+  return trimmed ? trimmed : null;
+};
+
+const sanitizeCoordinate = (value) => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null || value === '') {
+    return null;
+  }
+
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return parsed;
+};
+
+const sanitizeDonorPayload = (payload = {}) => {
+  const donorData = {};
+
+  for (const field of DONOR_FIELDS) {
+    if (!(field in payload)) {
+      continue;
+    }
+
+    if (field === 'latitude' || field === 'longitude') {
+      donorData[field] = sanitizeCoordinate(payload[field]);
+      continue;
+    }
+
+    donorData[field] = sanitizeText(payload[field]);
+  }
+
+  return donorData;
+};
+
+const serializeDonor = (donor) => {
+  if (!donor) {
+    return null;
+  }
+
+  return {
+    ...donor.toJSON(),
+    eligibility: donor.calculateEligibility(),
+  };
+};
+
 const getDonors = async (req, res) => {
   try {
     const { bloodType, isEligible, search } = req.query;
     const where = {};
 
-    if (bloodType) where.blood_type = bloodType;
-    if (isEligible !== undefined) where.is_eligible = isEligible === 'true';
+    if (bloodType) {
+      where.blood_type = bloodType;
+    }
+
+    if (isEligible !== undefined) {
+      where.is_eligible = isEligible === 'true';
+    }
+
     if (search) {
       where[Op.or] = [
         { full_name: { [Op.iLike]: `%${search}%` } },
@@ -25,13 +102,84 @@ const getDonors = async (req, res) => {
       order: [['created_at', 'DESC']],
     });
 
-    res.json({ success: true, data: donors });
+    res.json({
+      success: true,
+      data: donors.map((donor) => serializeDonor(donor)),
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 };
 
-// Get current donor profile
+const createDonor = async (req, res) => {
+  const transaction = await sequelize.transaction();
+
+  try {
+    const {
+      email,
+      password = 'donor123',
+      ...rawDonorPayload
+    } = req.body || {};
+
+    const normalizedEmail = sanitizeText(email)?.toLowerCase();
+    const donorPayload = sanitizeDonorPayload(rawDonorPayload);
+
+    if (!normalizedEmail) {
+      await transaction.rollback();
+      return res.status(400).json({ success: false, error: 'Email address is required.' });
+    }
+
+    if (!donorPayload.full_name || !donorPayload.blood_type) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        error: 'full_name and blood_type are required to register a donor.',
+      });
+    }
+
+    const existingUser = await User.findOne({
+      where: { email: normalizedEmail },
+      transaction,
+    });
+
+    if (existingUser) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        error: 'A user already exists with this email address.',
+      });
+    }
+
+    const user = await User.create({
+      email: normalizedEmail,
+      password_hash: password,
+      role: 'donor',
+      is_active: true,
+    }, { transaction });
+
+    const donor = await Donor.create({
+      user_id: user.id,
+      ...donorPayload,
+    }, { transaction });
+
+    await transaction.commit();
+
+    const createdDonor = await Donor.findByPk(donor.id, {
+      include: [{ model: User, as: 'user', attributes: ['email', 'is_active'] }],
+    });
+
+    res.status(201).json({
+      success: true,
+      data: serializeDonor(createdDonor),
+      temporaryPassword: req.body?.password ? undefined : password,
+      message: 'Donor account created successfully.',
+    });
+  } catch (error) {
+    await transaction.rollback();
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 const getDonorProfile = async (req, res) => {
   try {
     const donor = await Donor.findOne({
@@ -43,79 +191,105 @@ const getDonorProfile = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Donor profile not found' });
     }
 
-    const eligibility = donor.calculateEligibility();
-    
     res.json({
       success: true,
-      data: {
-        ...donor.toJSON(),
-        eligibility,
-      },
+      data: serializeDonor(donor),
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 };
 
-// Update donor profile
 const updateDonorProfile = async (req, res) => {
+  const transaction = await sequelize.transaction();
+
   try {
-    const donor = await Donor.findOne({ where: { user_id: req.user.id } });
+    const donor = await Donor.findOne({
+      where: { user_id: req.user.id },
+      transaction,
+    });
+
     if (!donor) {
+      await transaction.rollback();
       return res.status(404).json({ success: false, error: 'Donor profile not found' });
     }
 
-    await donor.update(req.body);
-    
+    const donorUpdates = sanitizeDonorPayload(req.body);
+    const requestedEmail = sanitizeText(req.body?.email)?.toLowerCase();
+
+    if (requestedEmail && requestedEmail !== req.user.email) {
+      const existingUser = await User.findOne({
+        where: {
+          email: requestedEmail,
+          id: { [Op.ne]: req.user.id },
+        },
+        transaction,
+      });
+
+      if (existingUser) {
+        await transaction.rollback();
+        return res.status(400).json({
+          success: false,
+          error: 'Another user already uses this email address.',
+        });
+      }
+
+      await req.user.update({ email: requestedEmail }, { transaction });
+    }
+
+    await donor.update(donorUpdates, { transaction });
+    await transaction.commit();
+
+    const refreshedDonor = await Donor.findOne({
+      where: { user_id: req.user.id },
+      include: [{ model: User, as: 'user', attributes: ['email', 'is_active'] }],
+    });
+
     res.json({
       success: true,
-      data: donor,
+      data: serializeDonor(refreshedDonor),
       message: 'Profile updated successfully',
     });
   } catch (error) {
+    await transaction.rollback();
     res.status(500).json({ success: false, error: error.message });
   }
 };
 
-// Get nearby donors using Haversine formula
 const getNearbyDonors = async (req, res) => {
   try {
     const { hospitalId, radiusKm = 10, bloodType, latitude, longitude } = req.query;
-
-    // Get hospital coordinates
-    const { Hospital } = require('../models');
     const hospital = await Hospital.findByPk(hospitalId);
 
-    const originLatitude = latitude != null ? parseFloat(latitude) : parseFloat(hospital?.latitude);
-    const originLongitude = longitude != null ? parseFloat(longitude) : parseFloat(hospital?.longitude);
+    const originLatitude = latitude != null ? Number.parseFloat(latitude) : Number.parseFloat(hospital?.latitude);
+    const originLongitude = longitude != null ? Number.parseFloat(longitude) : Number.parseFloat(hospital?.longitude);
 
     if (!hospital || Number.isNaN(originLatitude) || Number.isNaN(originLongitude)) {
       return res.status(400).json({ success: false, error: 'Hospital location not available' });
     }
 
-    // Get eligible donors
     const donors = await Donor.findAll({
       where: {
         is_eligible: true,
         latitude: { [Op.ne]: null },
         longitude: { [Op.ne]: null },
-        ...(bloodType && { blood_type: bloodType }),
+        ...(bloodType ? { blood_type: bloodType } : {}),
       },
       include: [{ model: User, as: 'user', attributes: ['email', 'is_active'] }],
     });
 
-    // Calculate distances
     const nearbyDonors = donors
-      .map(donor => ({
-        ...donor.toJSON(),
+      .filter((donor) => donor.user?.is_active !== false)
+      .map((donor) => ({
+        ...serializeDonor(donor),
         distance: haversineDistance(
           originLatitude,
           originLongitude,
-          parseFloat(donor.latitude),
-          parseFloat(donor.longitude)
+          Number.parseFloat(donor.latitude),
+          Number.parseFloat(donor.longitude),
         ),
       }))
-      .filter(donor => donor.distance <= parseFloat(radiusKm))
+      .filter((donor) => donor.distance <= Number.parseFloat(radiusKm))
       .sort((a, b) => a.distance - b.distance);
 
     res.json({ success: true, data: nearbyDonors });
@@ -124,7 +298,6 @@ const getNearbyDonors = async (req, res) => {
   }
 };
 
-// Record a donation
 const recordDonation = async (req, res) => {
   try {
     const { hospitalId, quantityMl = 450, notes } = req.body;
@@ -134,23 +307,20 @@ const recordDonation = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Donor not found' });
     }
 
-    // Check eligibility
     const eligibility = donor.calculateEligibility();
-    if (!eligibility.isEligible) {
+    if (!eligibility.is_eligible) {
       return res.status(400).json({
         success: false,
-        error: `Not eligible to donate. Next eligible date: ${eligibility.nextEligibleDate}`,
+        error: `Not eligible to donate. Next eligible date: ${eligibility.next_eligible_date}`,
       });
     }
 
-    // Update donor record
     const today = new Date().toISOString().split('T')[0];
     await donor.update({
       last_donation_date: today,
       donation_count: donor.donation_count + 1,
     });
 
-    // Create blood inventory record
     const bloodInventory = await BloodInventory.create({
       hospital_id: hospitalId,
       donor_id: donor.id,
@@ -164,11 +334,12 @@ const recordDonation = async (req, res) => {
       })(),
       status: 'available',
       testing_status: 'pending',
+      notes,
     });
 
     res.json({
       success: true,
-      data: { donor, bloodInventory },
+      data: { donor: serializeDonor(donor), bloodInventory },
       message: 'Donation recorded successfully',
     });
   } catch (error) {
@@ -176,7 +347,6 @@ const recordDonation = async (req, res) => {
   }
 };
 
-// Get donation history
 const getDonationHistory = async (req, res) => {
   try {
     const donor = await Donor.findOne({ where: { user_id: req.user.id } });
@@ -186,7 +356,7 @@ const getDonationHistory = async (req, res) => {
 
     const donations = await BloodInventory.findAll({
       where: { donor_id: donor.id },
-      include: [{ model: require('../models').Hospital, as: 'hospital', attributes: ['hospital_name'] }],
+      include: [{ model: Hospital, as: 'hospital', attributes: ['hospital_name'] }],
       order: [['collection_date', 'DESC']],
     });
 
@@ -197,6 +367,7 @@ const getDonationHistory = async (req, res) => {
 };
 
 module.exports = {
+  createDonor,
   getDonors,
   getDonorProfile,
   updateDonorProfile,
