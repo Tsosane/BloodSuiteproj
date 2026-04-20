@@ -31,7 +31,8 @@ api.interceptors.response.use(
     return response.data;
   },
   (error) => {
-    if (error.response?.status === 401) {
+    const hasSession = Boolean(localStorage.getItem('bloodSuiteToken'));
+    if (error.response?.status === 401 && hasSession) {
       localStorage.removeItem('bloodSuiteToken');
       localStorage.removeItem('bloodSuiteUserRole');
       localStorage.removeItem('bloodSuiteUserEmail');

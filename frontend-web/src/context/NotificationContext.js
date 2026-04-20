@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import notificationService from '../services/notificationService';
+import { useAuth } from './AuthContext';
 
 const NotificationContext = createContext();
 
@@ -12,11 +13,19 @@ export const useNotifications = () => {
 };
 
 export const NotificationProvider = ({ children }) => {
+  const { isAuthenticated } = useAuth();
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   const loadNotifications = useCallback(async () => {
+    if (!isAuthenticated) {
+      setNotifications([]);
+      setUnreadCount(0);
+      setLoading(false);
+      return;
+    }
+
     try {
       const [notificationResponse, unreadResponse] = await Promise.all([
         notificationService.getNotifications({ limit: 50 }),
@@ -30,9 +39,16 @@ export const NotificationProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      setNotifications([]);
+      setUnreadCount(0);
+      setLoading(false);
+      return undefined;
+    }
+
     loadNotifications();
 
     const interval = setInterval(() => {
@@ -40,7 +56,7 @@ export const NotificationProvider = ({ children }) => {
     }, 60000);
 
     return () => clearInterval(interval);
-  }, [loadNotifications]);
+  }, [isAuthenticated, loadNotifications]);
 
   const markAsRead = async (id) => {
     try {

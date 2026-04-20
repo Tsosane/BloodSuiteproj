@@ -699,6 +699,19 @@ const Login = () => {
                     </Button>
                   </Grid>
                 </Grid>
+
+                <Box sx={{ mt: 3, textAlign: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Need an account?{' '}
+                    <Button
+                      variant="text"
+                      onClick={() => navigate('/register')}
+                      sx={{ color: '#d32f2f', textTransform: 'none', fontWeight: 600, minWidth: 'auto', p: 0 }}
+                    >
+                      Create one here
+                    </Button>
+                  </Typography>
+                </Box>
               </form>
             </Paper>
           </Grid>
