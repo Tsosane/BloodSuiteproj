@@ -26,7 +26,7 @@ import {
   Phone as PhoneIcon,
   Send as SendIcon,
 } from '@mui/icons-material';
-import { DirectionsRenderer, GoogleMap, InfoWindow, Marker, Polyline, useJsApiLoader } from '@react-google-maps/api';
+import { DirectionsRenderer, GoogleMap, InfoWindow, Marker, useJsApiLoader } from '@react-google-maps/api';
 import donorService from '../../services/donorService';
 import hospitalService from '../../services/hospitalService';
 
@@ -44,6 +44,12 @@ const hasDonorCoordinates = (donor) => (
 
 const hasMapCoordinates = (location) => (
   Number.isFinite(Number(location?.lat)) && Number.isFinite(Number(location?.lng))
+);
+
+const isPlaceholderGoogleMapsKey = (value) => (
+  !value
+  || value.includes('your_google_maps_api_key_here')
+  || value.includes('missing-key')
 );
 
 const FallbackMap = ({ hospitalLocation, donors, selectedDonor, onSelectDonor }) => {
@@ -197,9 +203,10 @@ const NearbyDonors = () => {
   const [directionsError, setDirectionsError] = useState('');
   const [routeSummary, setRouteSummary] = useState(null);
 
-  const googleMapsApiKey = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
+  const googleMapsApiKey = process.env.REACT_APP_GOOGLE_MAPS_API_KEY || '';
+  const hasUsableGoogleMapsKey = !isPlaceholderGoogleMapsKey(googleMapsApiKey);
   const { isLoaded, loadError } = useJsApiLoader({
-    googleMapsApiKey: googleMapsApiKey || 'missing-key',
+    googleMapsApiKey: hasUsableGoogleMapsKey ? googleMapsApiKey : '',
   });
 
   const effectiveLocation = useMemo(() => {
@@ -310,7 +317,7 @@ const NearbyDonors = () => {
     setDirectionsError('');
     setRouteSummary(null);
 
-    if (!selectedMapDonor || !isLoaded || loadError || !googleMapsApiKey || !hasMapCoordinates(effectiveLocation) || !window.google?.maps) {
+    if (!selectedMapDonor || !isLoaded || loadError || !hasUsableGoogleMapsKey || !hasMapCoordinates(effectiveLocation) || !window.google?.maps) {
       return undefined;
     }
 
@@ -349,7 +356,7 @@ const NearbyDonors = () => {
     return () => {
       cancelled = true;
     };
-  }, [effectiveLocation, googleMapsApiKey, isLoaded, loadError, selectedMapDonor]);
+  }, [effectiveLocation, hasUsableGoogleMapsKey, isLoaded, loadError, selectedMapDonor]);
 
   const handleSelectDonor = (donor) => {
     setSelectedDonor(donor);
@@ -425,7 +432,7 @@ const NearbyDonors = () => {
     : '0.0';
 
   const renderMap = () => {
-    if (!googleMapsApiKey || loadError) {
+    if (!hasUsableGoogleMapsKey || loadError) {
       return (
         <FallbackMap
           hospitalLocation={effectiveLocation}
@@ -455,22 +462,6 @@ const NearbyDonors = () => {
           position={effectiveLocation}
           icon={{ url: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png' }}
         />
-
-        {mappableDonors.map((donor) => (
-          <Polyline
-            key={`path-${donor.id}`}
-            path={[
-              effectiveLocation,
-              { lat: Number(donor.latitude), lng: Number(donor.longitude) },
-            ]}
-            options={{
-              strokeColor: donor.id === selectedMapDonor?.id ? '#d32f2f' : '#ef9a9a',
-              strokeOpacity: donor.id === selectedMapDonor?.id ? 0.95 : 0.45,
-              strokeWeight: donor.id === selectedMapDonor?.id ? 4 : 2,
-              geodesic: true,
-            }}
-          />
-        ))}
 
         {mappableDonors.map((donor) => (
           <Marker
@@ -586,6 +577,11 @@ const NearbyDonors = () => {
       {locationWarning && (
         <Alert severity="info" sx={{ mb: 3 }}>
           {locationWarning}
+        </Alert>
+      )}
+      {!hasUsableGoogleMapsKey && (
+        <Alert severity="info" sx={{ mb: 3 }}>
+          Google Maps is not configured with a real API key, so the page is using the built-in location map and external route links instead.
         </Alert>
       )}
 
