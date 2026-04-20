@@ -1,5 +1,6 @@
 const forecastService = require('../services/forecastService');
 const donorNotificationService = require('../services/donorNotificationService');
+const XLSX = require('xlsx');
 
 const normalizeAlertsPayload = (payload) => {
   if (Array.isArray(payload)) {
@@ -181,6 +182,95 @@ const getModelAccuracy = async (req, res) => {
   }
 };
 
+const buildExportRows = ({ forecastResponse, bloodType, horizon }) => {
+  if (bloodType && bloodType !== 'all') {
+    return (forecastResponse?.forecasts || []).map((item) => ({
+      blood_type: forecastResponse?.blood_type || bloodType,
+      horizon,
+      day: item.day,
+      date: item.date,
+      predicted_demand: item.predicted_demand,
+      lower_bound: item.lower_bound,
+      upper_bound: item.upper_bound,
+      current_stock: forecastResponse?.current_stock || 0,
+      total_predicted_demand: forecastResponse?.total_predicted_demand || 0,
+      shortage_alert: forecastResponse?.shortage_alert ? 'Yes' : 'No',
+    }));
+  }
+
+  return (forecastResponse?.forecasts || []).flatMap((forecast) =>
+    (forecast?.forecasts || []).map((item) => ({
+      blood_type: forecast?.blood_type || '',
+      horizon,
+      day: item.day,
+      date: item.date,
+      predicted_demand: item.predicted_demand,
+      lower_bound: item.lower_bound,
+      upper_bound: item.upper_bound,
+      current_stock: forecast?.current_stock || 0,
+      total_predicted_demand: forecast?.total_predicted_demand || 0,
+      shortage_alert: forecast?.shortage_alert ? 'Yes' : 'No',
+    }))
+  );
+};
+
+const exportForecastReport = async (req, res) => {
+  try {
+    const { format = 'csv', horizon = '30day', bloodType = 'all' } = req.body || {};
+    const normalizedFormat = String(format).toLowerCase();
+    const normalizedBloodType = bloodType === 'all' ? 'all' : String(bloodType || '').toUpperCase();
+
+    if (!['csv', 'excel'].includes(normalizedFormat)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Only csv and excel exports are supported by the API. Use the browser print flow for PDF.',
+      });
+    }
+
+    const forecastResponse = normalizedBloodType === 'all'
+      ? await forecastService.getAllForecasts(horizon)
+      : await forecastService.getForecast(normalizedBloodType, horizon);
+
+    const rows = buildExportRows({
+      forecastResponse,
+      bloodType: normalizedBloodType,
+      horizon,
+    });
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'No forecast data available for export.',
+      });
+    }
+
+    const safeBloodType = normalizedBloodType === 'all'
+      ? 'all-blood-types'
+      : normalizedBloodType.replace(/[^A-Z0-9+-]/gi, '');
+    const fileBase = `forecast-report-${safeBloodType}-${horizon}`;
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+
+    if (normalizedFormat === 'csv') {
+      const csv = XLSX.utils.sheet_to_csv(worksheet);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename=\"${fileBase}.csv\"`);
+      return res.send(csv);
+    }
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Forecast');
+    const workbookBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=\"${fileBase}.xlsx\"`);
+    return res.send(workbookBuffer);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+};
+
 const retrainModels = async (req, res) => {
   try {
     const result = await forecastService.retrainModels();
@@ -234,6 +324,7 @@ module.exports = {
   getShortageAlerts,
   getRecommendedStock,
   getModelAccuracy,
+  exportForecastReport,
   retrainModels,
   triggerDonorNotifications,
 };

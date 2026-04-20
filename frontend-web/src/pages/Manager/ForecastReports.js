@@ -193,11 +193,112 @@ const ForecastReports = () => {
   const hasShortage = shortageAlerts.length > 0;
   const showBounds = currentData.some((item) => item.lowerBound != null);
 
+  const buildExportRows = () => {
+    if (selectedBloodType === 'all') {
+      return allForecastSummary.map((item) => ({
+        bloodType: item.blood_type,
+        forecastPeriod,
+        totalPredictedDemand: item.total_predicted_demand,
+        currentStock: item.current_stock,
+        shortageAlert: item.shortage_alert ? 'Yes' : 'No',
+      }));
+    }
+
+    return currentData.map((item) => ({
+      bloodType: selectedBloodType,
+      forecastPeriod,
+      day: item.day,
+      date: item.date,
+      predictedDemand: item.demand,
+      lowerBound: item.lowerBound,
+      upperBound: item.upperBound,
+      currentSupply: item.supply,
+    }));
+  };
+
+  const triggerBrowserDownload = (blob, filename) => {
+    const blobUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(blobUrl);
+  };
+
+  const openPdfPrintView = () => {
+    const rows = buildExportRows();
+    const printWindow = window.open('', '_blank', 'width=1000,height=800');
+
+    if (!printWindow) {
+      throw new Error('Unable to open print view. Please allow pop-ups for this site.');
+    }
+
+    const tableHeaders = rows.length ? Object.keys(rows[0]) : [];
+    const tableRows = rows.map((row) => `
+      <tr>${tableHeaders.map((header) => `<td>${row[header] ?? ''}</td>`).join('')}</tr>
+    `).join('');
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Blood Suite Forecast Report</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 24px; color: #222; }
+            h1, h2 { color: #d32f2f; }
+            table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background: #fff5f5; }
+            .meta { margin-bottom: 16px; }
+          </style>
+        </head>
+        <body>
+          <h1>Blood Suite Forecast Report</h1>
+          <div class="meta">
+            <p><strong>Forecast Period:</strong> ${forecastPeriod}</p>
+            <p><strong>Blood Type:</strong> ${selectedBloodType}</p>
+            <p><strong>Generated:</strong> ${new Date().toLocaleString()}</p>
+          </div>
+          <h2>Forecast Data</h2>
+          <table>
+            <thead>
+              <tr>${tableHeaders.map((header) => `<th>${header}</th>`).join('')}</tr>
+            </thead>
+            <tbody>
+              ${tableRows || '<tr><td colspan="100%">No forecast data available.</td></tr>'}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+    }, 300);
+  };
+
   const handleExport = async (format) => {
     setAnchorEl(null);
     setExportStatus('loading');
     try {
-      const response = await forecastService.exportForecastReport(format);
+      if (format === 'pdf') {
+        openPdfPrintView();
+        setExportStatus('pdf-success');
+        setTimeout(() => setExportStatus(null), 5000);
+        return;
+      }
+
+      const response = await forecastService.exportForecastReport({
+        format,
+        horizon: forecastPeriod,
+        bloodType: selectedBloodType,
+      });
+
+      const fallbackExtension = format === 'excel' ? 'xlsx' : 'csv';
+      const filename = response?.filename || `forecast-report-${selectedBloodType}-${forecastPeriod}.${fallbackExtension}`;
+      triggerBrowserDownload(response.blob, filename);
       setExportStatus(response?.success ? 'success' : 'error');
     } catch (error) {
       setExportStatus('error');
@@ -269,7 +370,7 @@ const ForecastReports = () => {
             </IconButton>
           </Tooltip>
           <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => setAnchorEl(null)}>
-            <MenuItem onClick={() => handleExport('pdf')}>Export as PDF</MenuItem>
+            <MenuItem onClick={() => handleExport('pdf')}>Print / Save as PDF</MenuItem>
             <MenuItem onClick={() => handleExport('csv')}>Export as CSV</MenuItem>
             <MenuItem onClick={() => handleExport('excel')}>Export as Excel</MenuItem>
           </Menu>
@@ -294,8 +395,13 @@ const ForecastReports = () => {
         </Alert>
       )}
       {exportStatus === 'success' && (
+      <Alert severity="success" sx={{ mb: 3 }}>
+        Forecast export request submitted successfully.
+      </Alert>
+    )}
+      {exportStatus === 'pdf-success' && (
         <Alert severity="success" sx={{ mb: 3 }}>
-          Forecast export request submitted successfully.
+          Print dialog opened. Choose Save as PDF in your browser to download the report.
         </Alert>
       )}
       {exportStatus === 'error' && (

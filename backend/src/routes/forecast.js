@@ -6,6 +6,7 @@ const {
   getShortageAlerts,
   getRecommendedStock,
   getModelAccuracy,
+  exportForecastReport,
   retrainModels,
   triggerDonorNotifications,
 } = require('../controllers/forecastController');
@@ -28,6 +29,11 @@ router.get(
   '/accuracy',
   rbacMiddleware([ROLES.ADMIN, ROLES.MANAGER, ROLES.HOSPITAL]),
   getModelAccuracy
+);
+router.post(
+  '/export',
+  rbacMiddleware([ROLES.ADMIN, ROLES.MANAGER, ROLES.HOSPITAL]),
+  exportForecastReport
 );
 router.post(
   '/train',

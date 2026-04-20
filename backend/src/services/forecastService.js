@@ -16,7 +16,7 @@ class ForecastService {
    */
   async getForecast(bloodType, horizon = '30day') {
     try {
-      const response = await this.client.get(`/forecast/${bloodType}`, {
+      const response = await this.client.get(`/forecast/${encodeURIComponent(bloodType)}`, {
         params: { horizon }
       });
       return response.data;
