@@ -1,5 +1,5 @@
 // src/controllers/requestController.js
-const { Request, Hospital, BloodInventory, Notification } = require('../models');
+const { Request, Hospital, BloodInventory, Notification, User } = require('../models');
 const { Op } = require('sequelize');
 
 // Get all requests (with filters)
@@ -42,12 +42,15 @@ const createRequest = async (req, res) => {
 
     // Verify hospital access
     let finalHospitalId = hospital_id;
+    let requestHospital = null;
     if (req.user.role === 'hospital') {
-      const hospital = await Hospital.findOne({ where: { user_id: req.user.id } });
-      if (!hospital) {
+      requestHospital = await Hospital.findOne({ where: { user_id: req.user.id } });
+      if (!requestHospital) {
         return res.status(403).json({ success: false, error: 'Hospital not found' });
       }
-      finalHospitalId = hospital.id;
+      finalHospitalId = requestHospital.id;
+    } else if (finalHospitalId) {
+      requestHospital = await Hospital.findByPk(finalHospitalId);
     }
 
     const request = await Request.create({
@@ -65,15 +68,31 @@ const createRequest = async (req, res) => {
 
     // Create notification for admin and managers
     if (urgency === 'urgent' || urgency === 'emergency') {
-      await Notification.create({
-        user_id: null, // Will be sent to all admins and managers
-        type: 'urgent_request',
-        priority: urgency === 'emergency' ? 'critical' : 'high',
-        title: `${urgency.toUpperCase()} Blood Request`,
-        message: `Hospital ${hospital_id} needs ${quantity_ml}ml of ${blood_type} blood urgently`,
-        action_required: true,
-        action_url: `/requests/${request.id}`,
+      const recipients = await User.findAll({
+        where: {
+          role: {
+            [Op.in]: ['admin', 'blood_bank_manager'],
+          },
+          is_active: true,
+        },
+        attributes: ['id'],
       });
+
+      if (recipients.length > 0) {
+        const hospitalLabel = requestHospital?.hospital_name || finalHospitalId || 'Unknown hospital';
+
+        await Notification.bulkCreate(
+          recipients.map((recipient) => ({
+            user_id: recipient.id,
+            type: 'urgent_request',
+            priority: urgency === 'emergency' ? 'critical' : 'high',
+            title: `${urgency.toUpperCase()} Blood Request`,
+            message: `${hospitalLabel} needs ${quantity_ml}ml of ${blood_type} blood urgently`,
+            action_required: true,
+            action_url: `/requests/${request.id}`,
+          }))
+        );
+      }
     }
 
     res.status(201).json({

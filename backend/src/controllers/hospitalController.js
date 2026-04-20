@@ -1,27 +1,88 @@
-// src/controllers/hospitalController.js
-const { Hospital, User } = require('../models');
+const { Hospital, User, Request } = require('../models');
 const { Op } = require('sequelize');
+
+const getEffectiveApprovalStatus = (hospital) => {
+  if (hospital.approval_status === 'rejected') {
+    return 'rejected';
+  }
+
+  if (hospital.is_approved) {
+    return 'approved';
+  }
+
+  return 'pending';
+};
+
+const serializeHospital = (hospital) => {
+  const json = hospital.toJSON();
+  return {
+    ...json,
+    approval_status: getEffectiveApprovalStatus(json),
+  };
+};
+
+const buildHospitalFilters = (status, search) => {
+  const andClauses = [];
+
+  if (status === 'approved') {
+    andClauses.push({ is_approved: true });
+  } else if (status === 'pending') {
+    andClauses.push({ is_approved: false });
+    andClauses.push({
+      [Op.or]: [
+        { approval_status: 'pending' },
+        { approval_status: null },
+      ],
+    });
+  } else if (status === 'rejected') {
+    andClauses.push({ approval_status: 'rejected' });
+  }
+
+  if (search) {
+    andClauses.push({
+      [Op.or]: [
+        { hospital_name: { [Op.iLike]: `%${search}%` } },
+        { license_number: { [Op.iLike]: `%${search}%` } },
+        { address: { [Op.iLike]: `%${search}%` } },
+      ],
+    });
+  }
+
+  if (andClauses.length === 0) {
+    return {};
+  }
+
+  if (andClauses.length === 1) {
+    return andClauses[0];
+  }
+
+  return { [Op.and]: andClauses };
+};
 
 // Get all hospitals (admin/manager only)
 const getHospitals = async (req, res) => {
   try {
     const { status, search } = req.query;
-    const where = {};
-
-    if (status) where.is_approved = status === 'approved';
-    if (search) {
-      where[Op.or] = [
-        { hospital_name: { [Op.iLike]: `%${search}%` } },
-              
-        { license_number: { [Op.iLike]: `%${search}%` } },
-        { address: { [Op.iLike]: `%${search}%` } },
-      ];
-    }
 
     const hospitals = await Hospital.findAll({
-      where,
+      where: buildHospitalFilters(status, search),
       include: [{ model: User, as: 'user', attributes: ['email', 'is_active'] }],
       order: [['created_at', 'DESC']],
+    });
+
+    res.json({ success: true, data: hospitals.map(serializeHospital) });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Get public list of approved hospitals for authenticated users
+const getApprovedHospitals = async (req, res) => {
+  try {
+    const hospitals = await Hospital.findAll({
+      where: { is_approved: true },
+      attributes: ['id', 'hospital_name', 'license_number', 'address', 'phone', 'latitude', 'longitude', 'capacity'],
+      order: [['hospital_name', 'ASC']],
     });
 
     res.json({ success: true, data: hospitals });
@@ -42,7 +103,7 @@ const getHospitalProfile = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Hospital profile not found' });
     }
 
-    res.json({ success: true, data: hospital });
+    res.json({ success: true, data: serializeHospital(hospital) });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -53,7 +114,6 @@ const registerHospital = async (req, res) => {
   try {
     const { hospital_name, license_number, address, phone, latitude, longitude, capacity } = req.body;
 
-    // Check if hospital already exists
     const existingHospital = await Hospital.findOne({ where: { license_number } });
     if (existingHospital) {
       return res.status(400).json({ success: false, error: 'Hospital with this license already exists' });
@@ -69,11 +129,12 @@ const registerHospital = async (req, res) => {
       longitude,
       capacity,
       is_approved: false,
+      approval_status: 'pending',
     });
 
     res.status(201).json({
       success: true,
-      data: hospital,
+      data: serializeHospital(hospital),
       message: 'Hospital registered successfully. Awaiting admin approval.',
     });
   } catch (error) {
@@ -85,19 +146,46 @@ const registerHospital = async (req, res) => {
 const approveHospital = async (req, res) => {
   try {
     const { id } = req.params;
-    const { approved } = req.body;
 
     const hospital = await Hospital.findByPk(id);
     if (!hospital) {
       return res.status(404).json({ success: false, error: 'Hospital not found' });
     }
 
-    await hospital.update({ is_approved: approved === true });
+    await hospital.update({
+      is_approved: true,
+      approval_status: 'approved',
+    });
 
     res.json({
       success: true,
-      data: hospital,
-      message: `Hospital ${approved ? 'approved' : 'rejected'} successfully`,
+      data: serializeHospital(hospital),
+      message: 'Hospital approved successfully',
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Reject hospital (admin only)
+const rejectHospital = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const hospital = await Hospital.findByPk(id);
+    if (!hospital) {
+      return res.status(404).json({ success: false, error: 'Hospital not found' });
+    }
+
+    await hospital.update({
+      is_approved: false,
+      approval_status: 'rejected',
+    });
+
+    res.json({
+      success: true,
+      data: serializeHospital(hospital),
+      message: 'Hospital rejected successfully',
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -108,12 +196,22 @@ const approveHospital = async (req, res) => {
 const getPendingHospitals = async (req, res) => {
   try {
     const hospitals = await Hospital.findAll({
-      where: { is_approved: false },
-      include: [{ model: User, as: 'user', attributes: ['email', 'created_at'] }],
+      where: {
+        [Op.and]: [
+          { is_approved: false },
+          {
+            [Op.or]: [
+              { approval_status: 'pending' },
+              { approval_status: null },
+            ],
+          },
+        ],
+      },
+      include: [{ model: User, as: 'user', attributes: ['email', 'created_at', 'is_active'] }],
       order: [['created_at', 'ASC']],
     });
 
-    res.json({ success: true, data: hospitals });
+    res.json({ success: true, data: hospitals.map(serializeHospital) });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -121,8 +219,10 @@ const getPendingHospitals = async (req, res) => {
 
 module.exports = {
   getHospitals,
+  getApprovedHospitals,
   getHospitalProfile,
   registerHospital,
   approveHospital,
+  rejectHospital,
   getPendingHospitals,
 };

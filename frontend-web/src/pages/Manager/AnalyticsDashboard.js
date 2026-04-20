@@ -1,241 +1,277 @@
-// src/pages/Manager/AnalyticsDashboard.js
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  Alert,
   Box,
-  Paper,
-  Typography,
-  Grid,
+  Button,
+  ButtonGroup,
   Card,
   CardContent,
   Chip,
-  Button,
-  IconButton,
-  Tooltip,
-  Menu,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  Select,
-  Tabs,
-  Tab,
+  CircularProgress,
   Divider,
+  FormControl,
+  Grid,
+  InputLabel,
+  MenuItem,
+  Paper,
+  Select,
+  Tab,
+  Tabs,
+  Typography,
 } from '@mui/material';
 import {
-  TrendingUp as TrendingUpIcon,
-  TrendingDown as TrendingDownIcon,
   Bloodtype as BloodIcon,
-  People as PeopleIcon,
+  CheckCircle as CheckIcon,
   LocalHospital as HospitalIcon,
-  Assessment as AssessmentIcon,
-  Download as DownloadIcon,
+  People as PeopleIcon,
   Refresh as RefreshIcon,
-  CalendarToday as CalendarIcon,
-  BarChart as BarChartIcon,
-  PieChart as PieChartIcon,
-  ShowChart as LineChartIcon,
+  TrendingUp as TrendingUpIcon,
 } from '@mui/icons-material';
 import {
-  LineChart,
-  Line,
-  BarChart,
   Bar,
-  PieChart,
-  Pie,
+  BarChart,
+  CartesianGrid,
   Cell,
+  Legend,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip as RechartsTooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip as RechartsTooltip,
-  Legend,
-  ResponsiveContainer,
 } from 'recharts';
+import analyticsService from '../../services/analyticsService';
+
+const BLOOD_COLORS = {
+  'O+': '#d32f2f',
+  'O-': '#8e0000',
+  'A+': '#ef6c00',
+  'A-': '#ff9800',
+  'B+': '#1976d2',
+  'B-': '#42a5f5',
+  'AB+': '#2e7d32',
+  'AB-': '#66bb6a',
+};
+
+const URGENCY_COLORS = {
+  routine: '#1976d2',
+  urgent: '#fb8c00',
+  emergency: '#d32f2f',
+};
+
+const formatShortDate = (value) => {
+  if (!value) {
+    return 'Unknown';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+};
+
+const StatCard = ({ title, value, subtitle, icon, color }) => (
+  <Card sx={{ borderTop: `4px solid ${color}`, height: '100%' }}>
+    <CardContent>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+        <Typography variant="body2" color="text.secondary">
+          {title}
+        </Typography>
+        {icon}
+      </Box>
+      <Typography variant="h4" sx={{ fontWeight: 700, mb: 1 }}>
+        {value}
+      </Typography>
+      <Typography variant="body2" color="text.secondary">
+        {subtitle}
+      </Typography>
+    </CardContent>
+  </Card>
+);
 
 const AnalyticsDashboard = () => {
-  const [timeRange, setTimeRange] = useState('6months');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [timeRange, setTimeRange] = useState('30days');
   const [chartType, setChartType] = useState('line');
-  const [anchorEl, setAnchorEl] = useState(null);
   const [activeTab, setActiveTab] = useState(0);
+  const [dashboard, setDashboard] = useState(null);
+  const [inventorySummary, setInventorySummary] = useState([]);
+  const [requestTrends, setRequestTrends] = useState([]);
+  const [donorStats, setDonorStats] = useState({
+    byBloodType: [],
+    donationFrequency: [],
+  });
 
-  const requestData = [
-    { month: 'Jan', requests: 42, fulfilled: 38, donors: 28 },
-    { month: 'Feb', requests: 48, fulfilled: 45, donors: 32 },
-    { month: 'Mar', requests: 55, fulfilled: 52, donors: 35 },
-    { month: 'Apr', requests: 62, fulfilled: 58, donors: 38 },
-    { month: 'May', requests: 58, fulfilled: 55, donors: 36 },
-    { month: 'Jun', requests: 72, fulfilled: 68, donors: 42 },
-  ];
+  const loadData = async (selectedRange = timeRange) => {
+    setLoading(true);
+    setError('');
 
-  const inventoryByType = [
-    { name: 'O+', value: 120, color: '#d32f2f' },
-    { name: 'A+', value: 62, color: '#ff9800' },
-    { name: 'B+', value: 45, color: '#2196f3' },
-    { name: 'O-', value: 28, color: '#4caf50' },
-    { name: 'AB+', value: 35, color: '#9c27b0' },
-    { name: 'A-', value: 18, color: '#795548' },
-    { name: 'B-', value: 12, color: '#607d8b' },
-    { name: 'AB-', value: 22, color: '#e91e63' },
-  ];
+    try {
+      const [dashboardResponse, inventoryResponse, requestTrendResponse, donorStatsResponse] = await Promise.all([
+        analyticsService.getDashboard(),
+        analyticsService.getInventorySummary(),
+        analyticsService.getRequestTrends(selectedRange),
+        analyticsService.getDonorStats(),
+      ]);
 
-  const urgencyDistribution = [
-    { name: 'Routine', value: 45, color: '#2196f3' },
-    { name: 'Urgent', value: 35, color: '#ff9800' },
-    { name: 'Emergency', value: 20, color: '#f44336' },
-  ];
-
-  const weeklyTrends = [
-    { day: 'Mon', demand: 28 },
-    { day: 'Tue', demand: 32 },
-    { day: 'Wed', demand: 35 },
-    { day: 'Thu', demand: 38 },
-    { day: 'Fri', demand: 42 },
-    { day: 'Sat', demand: 48 },
-    { day: 'Sun', demand: 52 },
-  ];
-
-  const stats = {
-    totalRequests: 337,
-    fulfillmentRate: 94,
-    avgResponseTime: 2.4,
-    wastageRate: 6,
-    activeDonors: 156,
-    newDonors: 42,
-    totalHospitals: 8,
-    criticalStock: 2,
+      setDashboard(dashboardResponse.data || null);
+      setInventorySummary(inventoryResponse.data || []);
+      setRequestTrends(requestTrendResponse.data || []);
+      setDonorStats(
+        donorStatsResponse.data || {
+          byBloodType: [],
+          donationFrequency: [],
+        }
+      );
+    } catch (loadError) {
+      console.error('Failed to load analytics dashboard', loadError);
+      setError(loadError.error || loadError.message || 'Unable to load analytics dashboard data.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleExport = () => {
-    setAnchorEl(null);
-    alert('Export functionality will be implemented');
-  };
+  useEffect(() => {
+    loadData(timeRange);
+  }, [timeRange]);
+
+  const requestTrendChart = requestTrends.map((item) => ({
+    date: formatShortDate(item.date),
+    requests: Number(item.total || 0),
+    fulfilled: Number(item.fulfilled || 0),
+  }));
+
+  const inventoryChart = inventorySummary.map((item) => ({
+    name: item.blood_type,
+    value: Number(item.available_units || item.count || 0),
+    totalMl: Number(item.total_ml || 0),
+    color: BLOOD_COLORS[item.blood_type] || '#9e9e9e',
+  }));
+
+  const donorBloodTypeChart = (donorStats.byBloodType || []).map((item) => ({
+    name: item.blood_type,
+    value: Number(item.count || 0),
+    averageDonations: Number(item.avg_donations || 0).toFixed(1),
+    color: BLOOD_COLORS[item.blood_type] || '#9e9e9e',
+  }));
+
+  const donationFrequencyChart = (donorStats.donationFrequency || []).map((item) => ({
+    month: formatShortDate(item.month),
+    donations: Number(item.donations || 0),
+  }));
+
+  const urgencyDistribution = Object.entries(
+    (dashboard?.requestTrends || []).reduce((accumulator, item) => {
+      const urgency = item.urgency || 'routine';
+      accumulator[urgency] = (accumulator[urgency] || 0) + Number(item.count || 0);
+      return accumulator;
+    }, {})
+  ).map(([name, value]) => ({
+    name,
+    value,
+    color: URGENCY_COLORS[name] || '#9e9e9e',
+  }));
+
+  const lowStockTypes = inventoryChart.filter((item) => item.value < 3).length;
+  const totalUnits = inventoryChart.reduce((total, item) => total + item.value, 0);
+
+  if (loading) {
+    return (
+      <Box display="flex" justifyContent="center" py={8}>
+        <CircularProgress sx={{ color: '#d32f2f' }} />
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: 3 }}>
-      {/* Header */}
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4" sx={{ fontWeight: 700, color: '#d32f2f' }}>
-          Analytics Dashboard
-        </Typography>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3} flexWrap="wrap" gap={2}>
         <Box>
-          <FormControl sx={{ minWidth: 120, mr: 2 }}>
+          <Typography variant="h4" sx={{ fontWeight: 700, color: '#d32f2f' }}>
+            Analytics Dashboard
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Live KPIs and charts backed by the analytics API
+          </Typography>
+        </Box>
+        <Box display="flex" alignItems="center" gap={2} flexWrap="wrap">
+          <FormControl size="small" sx={{ minWidth: 160 }}>
             <InputLabel>Time Range</InputLabel>
             <Select
               value={timeRange}
-              onChange={(e) => setTimeRange(e.target.value)}
               label="Time Range"
-              size="small"
+              onChange={(event) => setTimeRange(event.target.value)}
             >
               <MenuItem value="30days">Last 30 Days</MenuItem>
-              <MenuItem value="3months">Last 3 Months</MenuItem>
-              <MenuItem value="6months">Last 6 Months</MenuItem>
+              <MenuItem value="90days">Last 90 Days</MenuItem>
               <MenuItem value="1year">Last Year</MenuItem>
             </Select>
           </FormControl>
-          <Tooltip title="Export Data">
-            <IconButton
-              onClick={(e) => setAnchorEl(e.currentTarget)}
-              sx={{ color: '#d32f2f' }}
-            >
-              <DownloadIcon />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Refresh">
-            <IconButton sx={{ color: '#d32f2f' }}>
-              <RefreshIcon />
-            </IconButton>
-          </Tooltip>
-          <Menu
-            anchorEl={anchorEl}
-            open={Boolean(anchorEl)}
-            onClose={() => setAnchorEl(null)}
+          <Button
+            variant="outlined"
+            startIcon={<RefreshIcon />}
+            onClick={() => loadData(timeRange)}
+            sx={{ borderColor: '#d32f2f', color: '#d32f2f' }}
           >
-            <MenuItem onClick={handleExport}>Export as CSV</MenuItem>
-            <MenuItem onClick={handleExport}>Export as PDF</MenuItem>
-            <MenuItem onClick={handleExport}>Export as Excel</MenuItem>
-          </Menu>
+            Refresh
+          </Button>
         </Box>
       </Box>
 
-      {/* KPI Cards */}
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          {error}
+        </Alert>
+      )}
+
       <Grid container spacing={3} sx={{ mb: 4 }}>
         <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ borderTop: '4px solid #d32f2f' }}>
-            <CardContent>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
-                Total Requests
-              </Typography>
-              <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                {stats.totalRequests}
-              </Typography>
-              <Chip
-                icon={<TrendingUpIcon />}
-                label="+12%"
-                size="small"
-                sx={{ bgcolor: '#e8f5e9', color: '#2e7d32', mt: 1 }}
-              />
-            </CardContent>
-          </Card>
+          <StatCard
+            title="Total Requests"
+            value={dashboard?.requests?.total || 0}
+            subtitle="All requests recorded in the database"
+            icon={<TrendingUpIcon sx={{ color: '#d32f2f' }} />}
+            color="#d32f2f"
+          />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ borderTop: '4px solid #2e7d32' }}>
-            <CardContent>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
-                Fulfillment Rate
-              </Typography>
-              <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                {stats.fulfillmentRate}%
-              </Typography>
-              <Chip
-                icon={<TrendingUpIcon />}
-                label="+5%"
-                size="small"
-                sx={{ bgcolor: '#e8f5e9', color: '#2e7d32', mt: 1 }}
-              />
-            </CardContent>
-          </Card>
+          <StatCard
+            title="Fulfillment Rate"
+            value={`${dashboard?.requests?.fulfillmentRate || 0}%`}
+            subtitle={`${dashboard?.requests?.fulfilled || 0} fulfilled requests`}
+            icon={<CheckIcon sx={{ color: '#2e7d32' }} />}
+            color="#2e7d32"
+          />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ borderTop: '4px solid #ff9800' }}>
-            <CardContent>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
-                Active Donors
-              </Typography>
-              <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                {stats.activeDonors}
-              </Typography>
-              <Chip
-                icon={<TrendingUpIcon />}
-                label="+8"
-                size="small"
-                sx={{ bgcolor: '#e8f5e9', color: '#2e7d32', mt: 1 }}
-              />
-            </CardContent>
-          </Card>
+          <StatCard
+            title="Active Donors"
+            value={dashboard?.donors?.active || 0}
+            subtitle={`${dashboard?.donors?.total || 0} total donor profiles`}
+            icon={<PeopleIcon sx={{ color: '#fb8c00' }} />}
+            color="#fb8c00"
+          />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ borderTop: '4px solid #f44336' }}>
-            <CardContent>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
-                Critical Stock
-              </Typography>
-              <Typography variant="h4" sx={{ fontWeight: 700, color: '#f44336' }}>
-                {stats.criticalStock}
-              </Typography>
-              <Chip
-                icon={<TrendingDownIcon />}
-                label="Alert"
-                size="small"
-                sx={{ bgcolor: '#ffebee', color: '#c62828', mt: 1 }}
-              />
-            </CardContent>
-          </Card>
+          <StatCard
+            title="Available Units"
+            value={totalUnits}
+            subtitle={`${lowStockTypes} low-stock blood types`}
+            icon={<BloodIcon sx={{ color: '#1976d2' }} />}
+            color="#1976d2"
+          />
         </Grid>
       </Grid>
 
-      {/* Tabs */}
       <Paper sx={{ borderRadius: 2, overflow: 'hidden' }}>
         <Tabs
           value={activeTab}
-          onChange={(e, v) => setActiveTab(v)}
+          onChange={(event, value) => setActiveTab(value)}
           sx={{
             borderBottom: 1,
             borderColor: 'divider',
@@ -247,243 +283,218 @@ const AnalyticsDashboard = () => {
           <Tab label="Request Trends" />
           <Tab label="Inventory Analysis" />
           <Tab label="Donor Insights" />
-          <Tab label="Performance Metrics" />
+          <Tab label="System Overview" />
         </Tabs>
 
-        {/* Request Trends Tab */}
         {activeTab === 0 && (
           <Box sx={{ p: 3 }}>
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-              <Typography variant="h6" sx={{ fontWeight: 600, color: '#d32f2f' }}>
-                Request & Fulfillment Trends
+            <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} flexWrap="wrap" gap={2}>
+              <Typography variant="h6" sx={{ fontWeight: 700, color: '#d32f2f' }}>
+                Requests vs Fulfilled Requests
               </Typography>
-              <Box>
-                <Tooltip title="Line Chart">
-                  <IconButton
-                    onClick={() => setChartType('line')}
-                    sx={{ color: chartType === 'line' ? '#d32f2f' : '#999' }}
-                  >
-                    <LineChartIcon />
-                  </IconButton>
-                </Tooltip>
-                <Tooltip title="Bar Chart">
-                  <IconButton
-                    onClick={() => setChartType('bar')}
-                    sx={{ color: chartType === 'bar' ? '#d32f2f' : '#999' }}
-                  >
-                    <BarChartIcon />
-                  </IconButton>
-                </Tooltip>
-              </Box>
+              <ButtonGroup size="small">
+                <Button
+                  variant={chartType === 'line' ? 'contained' : 'outlined'}
+                  onClick={() => setChartType('line')}
+                  sx={chartType === 'line' ? { bgcolor: '#d32f2f' } : { color: '#d32f2f', borderColor: '#d32f2f' }}
+                >
+                  Line
+                </Button>
+                <Button
+                  variant={chartType === 'bar' ? 'contained' : 'outlined'}
+                  onClick={() => setChartType('bar')}
+                  sx={chartType === 'bar' ? { bgcolor: '#d32f2f' } : { color: '#d32f2f', borderColor: '#d32f2f' }}
+                >
+                  Bar
+                </Button>
+              </ButtonGroup>
             </Box>
-            <ResponsiveContainer width="100%" height={400}>
-              {chartType === 'line' ? (
-                <LineChart data={requestData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <RechartsTooltip />
-                  <Legend />
-                  <Line type="monotone" dataKey="requests" stroke="#d32f2f" strokeWidth={2} />
-                  <Line type="monotone" dataKey="fulfilled" stroke="#2e7d32" strokeWidth={2} />
-                </LineChart>
-              ) : (
-                <BarChart data={requestData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <RechartsTooltip />
-                  <Legend />
-                  <Bar dataKey="requests" fill="#d32f2f" />
-                  <Bar dataKey="fulfilled" fill="#2e7d32" />
-                </BarChart>
-              )}
-            </ResponsiveContainer>
 
-            <Grid container spacing={3} sx={{ mt: 3 }}>
-              <Grid item xs={12} md={6}>
-                <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 600 }}>
-                  Urgency Distribution
-                </Typography>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={urgencyDistribution}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={100}
-                      paddingAngle={5}
-                      dataKey="value"
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                    >
-                      {urgencyDistribution.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <RechartsTooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 600 }}>
-                  Weekly Demand Pattern
-                </Typography>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={weeklyTrends}>
+            <Box sx={{ height: 360 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                {chartType === 'line' ? (
+                  <LineChart data={requestTrendChart}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="day" />
+                    <XAxis dataKey="date" />
                     <YAxis />
                     <RechartsTooltip />
-                    <Bar dataKey="demand" fill="#d32f2f" />
+                    <Legend />
+                    <Line type="monotone" dataKey="requests" stroke="#d32f2f" strokeWidth={3} />
+                    <Line type="monotone" dataKey="fulfilled" stroke="#2e7d32" strokeWidth={3} />
+                  </LineChart>
+                ) : (
+                  <BarChart data={requestTrendChart}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="date" />
+                    <YAxis />
+                    <RechartsTooltip />
+                    <Legend />
+                    <Bar dataKey="requests" fill="#d32f2f" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="fulfilled" fill="#2e7d32" radius={[4, 4, 0, 0]} />
                   </BarChart>
-                </ResponsiveContainer>
-              </Grid>
-            </Grid>
+                )}
+              </ResponsiveContainer>
+            </Box>
           </Box>
         )}
 
-        {/* Inventory Analysis Tab */}
         {activeTab === 1 && (
           <Box sx={{ p: 3 }}>
             <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
-                <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, color: '#d32f2f' }}>
-                  Blood Inventory by Type
+              <Grid item xs={12} md={7}>
+                <Typography variant="h6" sx={{ fontWeight: 700, color: '#d32f2f', mb: 2 }}>
+                  Available Units by Blood Type
                 </Typography>
-                <ResponsiveContainer width="100%" height={400}>
-                  <PieChart>
-                    <Pie
-                      data={inventoryByType}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={80}
-                      outerRadius={120}
-                      paddingAngle={2}
-                      dataKey="value"
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                    >
-                      {inventoryByType.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <RechartsTooltip />
-                  </PieChart>
-                </ResponsiveContainer>
+                <Box sx={{ height: 360 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={inventoryChart}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" />
+                      <YAxis />
+                      <RechartsTooltip />
+                      <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                        {inventoryChart.map((entry) => (
+                          <Cell key={entry.name} fill={entry.color} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </Box>
               </Grid>
-              <Grid item xs={12} md={6}>
-                <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, color: '#d32f2f' }}>
-                  Stock Status
+              <Grid item xs={12} md={5}>
+                <Typography variant="h6" sx={{ fontWeight: 700, color: '#d32f2f', mb: 2 }}>
+                  Inventory Distribution
                 </Typography>
-                <Paper variant="outlined" sx={{ p: 3 }}>
-                  {inventoryByType.slice(0, 8).map((item) => (
-                    <Box key={item.name} sx={{ mb: 2 }}>
-                      <Box display="flex" justifyContent="space-between" mb={0.5}>
-                        <Typography variant="body2">{item.name}</Typography>
-                        <Typography variant="body2" fontWeight={600}>{item.value} units</Typography>
-                      </Box>
-                      <Box
-                        sx={{
-                          height: 8,
-                          bgcolor: '#e0e0e0',
-                          borderRadius: 4,
-                          overflow: 'hidden',
-                        }}
-                      >
-                        <Box
-                          sx={{
-                            width: `${(item.value / 150) * 100}%`,
-                            height: '100%',
-                            bgcolor: item.value < 30 ? '#f44336' : item.value < 50 ? '#ff9800' : '#4caf50',
-                            borderRadius: 4,
-                          }}
-                        />
-                      </Box>
-                    </Box>
-                  ))}
-                </Paper>
+                <Box sx={{ height: 360 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={inventoryChart} dataKey="value" nameKey="name" outerRadius={120} label>
+                        {inventoryChart.map((entry) => (
+                          <Cell key={entry.name} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </Box>
               </Grid>
             </Grid>
           </Box>
         )}
 
-        {/* Donor Insights Tab */}
         {activeTab === 2 && (
           <Box sx={{ p: 3 }}>
             <Grid container spacing={3}>
               <Grid item xs={12} md={6}>
-                <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, color: '#d32f2f' }}>
-                  Donor Growth Trend
+                <Typography variant="h6" sx={{ fontWeight: 700, color: '#d32f2f', mb: 2 }}>
+                  Donors by Blood Type
                 </Typography>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={requestData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="month" />
-                    <YAxis />
-                    <RechartsTooltip />
-                    <Line type="monotone" dataKey="donors" stroke="#d32f2f" strokeWidth={2} />
-                  </LineChart>
-                </ResponsiveContainer>
+                <Box sx={{ height: 320 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={donorBloodTypeChart} dataKey="value" nameKey="name" outerRadius={110} label>
+                        {donorBloodTypeChart.map((entry) => (
+                          <Cell key={entry.name} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </Box>
               </Grid>
               <Grid item xs={12} md={6}>
-                <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, color: '#d32f2f' }}>
-                  Blood Type Distribution Among Donors
+                <Typography variant="h6" sx={{ fontWeight: 700, color: '#d32f2f', mb: 2 }}>
+                  Donation Frequency
                 </Typography>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={inventoryByType}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <RechartsTooltip />
-                    <Bar dataKey="value" fill="#d32f2f" />
-                  </BarChart>
-                </ResponsiveContainer>
+                <Box sx={{ height: 320 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={donationFrequencyChart}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="month" />
+                      <YAxis />
+                      <RechartsTooltip />
+                      <Line type="monotone" dataKey="donations" stroke="#d32f2f" strokeWidth={3} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </Box>
               </Grid>
             </Grid>
           </Box>
         )}
 
-        {/* Performance Metrics Tab */}
         {activeTab === 3 && (
           <Box sx={{ p: 3 }}>
             <Grid container spacing={3}>
               <Grid item xs={12} md={4}>
-                <Card sx={{ textAlign: 'center', p: 2 }}>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    Average Response Time
-                  </Typography>
-                  <Typography variant="h3" sx={{ fontWeight: 700, color: '#d32f2f' }}>
-                    {stats.avgResponseTime}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    hours
-                  </Typography>
+                <Card variant="outlined" sx={{ height: '100%' }}>
+                  <CardContent>
+                    <Box display="flex" alignItems="center" gap={1} mb={2}>
+                      <HospitalIcon sx={{ color: '#d32f2f' }} />
+                      <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                        Hospitals
+                      </Typography>
+                    </Box>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                      Total registered hospitals
+                    </Typography>
+                    <Typography variant="h4" sx={{ fontWeight: 700, mb: 2 }}>
+                      {dashboard?.hospitals?.total || 0}
+                    </Typography>
+                    <Divider sx={{ my: 2 }} />
+                    <Typography variant="body2">Approved: {dashboard?.hospitals?.approved || 0}</Typography>
+                    <Typography variant="body2">Pending: {dashboard?.hospitals?.pending || 0}</Typography>
+                    <Typography variant="body2">Rejected: {dashboard?.hospitals?.rejected || 0}</Typography>
+                  </CardContent>
                 </Card>
               </Grid>
               <Grid item xs={12} md={4}>
-                <Card sx={{ textAlign: 'center', p: 2 }}>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    Wastage Rate
-                  </Typography>
-                  <Typography variant="h3" sx={{ fontWeight: 700, color: '#ff9800' }}>
-                    {stats.wastageRate}%
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    below target of 8%
-                  </Typography>
+                <Card variant="outlined" sx={{ height: '100%' }}>
+                  <CardContent>
+                    <Box display="flex" alignItems="center" gap={1} mb={2}>
+                      <PeopleIcon sx={{ color: '#d32f2f' }} />
+                      <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                        Donors
+                      </Typography>
+                    </Box>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                      Current donor population
+                    </Typography>
+                    <Typography variant="h4" sx={{ fontWeight: 700, mb: 2 }}>
+                      {dashboard?.donors?.total || 0}
+                    </Typography>
+                    <Divider sx={{ my: 2 }} />
+                    <Typography variant="body2">Eligible: {dashboard?.donors?.eligible || 0}</Typography>
+                    <Typography variant="body2">Active in last 30 days: {dashboard?.donors?.active || 0}</Typography>
+                  </CardContent>
                 </Card>
               </Grid>
               <Grid item xs={12} md={4}>
-                <Card sx={{ textAlign: 'center', p: 2 }}>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    New Donors (30d)
-                  </Typography>
-                  <Typography variant="h3" sx={{ fontWeight: 700, color: '#2e7d32' }}>
-                    {stats.newDonors}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    +15% from last month
-                  </Typography>
+                <Card variant="outlined" sx={{ height: '100%' }}>
+                  <CardContent>
+                    <Box display="flex" alignItems="center" gap={1} mb={2}>
+                      <TrendingUpIcon sx={{ color: '#d32f2f' }} />
+                      <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                        Request Urgency
+                      </Typography>
+                    </Box>
+                    {urgencyDistribution.map((item) => (
+                      <Box key={item.name} display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
+                        <Chip
+                          label={item.name}
+                          size="small"
+                          sx={{ bgcolor: `${item.color}20`, color: item.color, textTransform: 'capitalize' }}
+                        />
+                        <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                          {item.value}
+                        </Typography>
+                      </Box>
+                    ))}
+                    {urgencyDistribution.length === 0 && (
+                      <Typography variant="body2" color="text.secondary">
+                        No recent urgency data is available yet.
+                      </Typography>
+                    )}
+                  </CardContent>
                 </Card>
               </Grid>
             </Grid>

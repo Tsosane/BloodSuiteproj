@@ -17,6 +17,19 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
+  const hydrateUser = (authPayload) => {
+    if (!authPayload?.user) {
+      return null;
+    }
+
+    return {
+      ...authPayload.user,
+      hospitalName: authPayload.profile?.hospital_name || null,
+      hospitalId: authPayload.profile?.id || null,
+      profile: authPayload.profile || null,
+    };
+  };
+
   useEffect(() => {
     loadUser();
   }, []);
@@ -30,7 +43,7 @@ export const AuthProvider = ({ children }) => {
 
     try {
       const userData = await authService.getCurrentUser();
-      setUser(userData);
+      setUser(hydrateUser(userData));
       setIsAuthenticated(true);
     } catch (error) {
       console.error('Failed to load user:', error);
@@ -45,11 +58,11 @@ export const AuthProvider = ({ children }) => {
   const login = async (credentials) => {
     try {
       const response = await authService.login(credentials);
-      setUser(response.user);
+      setUser(hydrateUser(response));
       setIsAuthenticated(true);
       return { success: true, user: response.user };
     } catch (error) {
-      return { success: false, error: error.message || 'Login failed' };
+      return { success: false, error: error.error || error.message || 'Login failed' };
     }
   };
 
@@ -58,7 +71,7 @@ export const AuthProvider = ({ children }) => {
       const response = await authService.register(userData);
       return { success: true, data: response };
     } catch (error) {
-      return { success: false, error: error.message || 'Registration failed' };
+      return { success: false, error: error.error || error.message || 'Registration failed' };
     }
   };
 

@@ -73,9 +73,17 @@ const donorService = {
   },
 
   // Get nearby donors (Haversine)
-  getNearbyDonors: async (hospitalId, radiusKm = 10) => {
+  getNearbyDonors: async ({ hospitalId, radiusKm = 10, bloodType, latitude, longitude }) => {
     try {
-      const response = await api.get(`/donors/nearby?hospitalId=${hospitalId}&radius=${radiusKm}`);
+      const response = await api.get('/donors/nearby', {
+        params: {
+          hospitalId,
+          radiusKm,
+          bloodType,
+          latitude,
+          longitude,
+        },
+      });
       return response;
     } catch (error) {
       throw error;

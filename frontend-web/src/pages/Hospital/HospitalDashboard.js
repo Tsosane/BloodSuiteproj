@@ -1,293 +1,221 @@
-// src/pages/Hospital/HospitalDashboard.js
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   Box,
-  Grid,
-  Paper,
-  Typography,
+  Button,
   Card,
   CardContent,
-  Button,
+  Chip,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Grid,
+  MenuItem,
+  Paper,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Chip,
-  IconButton,
-  TextField,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  MenuItem,
-  Avatar,
-  LinearProgress,
-  Alert,
-  Snackbar,
   Tabs,
   Tab,
+  TextField,
+  Typography,
 } from '@mui/material';
 import {
-  Bloodtype as BloodIcon,
   Add as AddIcon,
-  LocalHospital as HospitalIcon,
-  Warning as WarningIcon,
-  CheckCircle as CheckIcon,
-  Schedule as ScheduleIcon,
+  Bloodtype as BloodIcon,
   Refresh as RefreshIcon,
-  Delete as DeleteIcon,
-  Edit as EditIcon,
-  LocationOn as LocationIcon,
-  NotificationsActive as AlertIcon,
+  Schedule as ScheduleIcon,
+  Warning as WarningIcon,
 } from '@mui/icons-material';
-import { DataGrid } from '@mui/x-data-grid';
+import hospitalService from '../../services/hospitalService';
+import inventoryService from '../../services/inventoryService';
+import requestService from '../../services/requestService';
+
+const bloodTypes = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+
+const StatCard = ({ title, value, color }) => (
+  <Card sx={{ borderTop: `4px solid ${color}` }}>
+    <CardContent>
+      <Typography variant="body2" color="text.secondary">
+        {title}
+      </Typography>
+      <Typography variant="h4" sx={{ fontWeight: 700 }}>
+        {value}
+      </Typography>
+    </CardContent>
+  </Card>
+);
 
 const HospitalDashboard = () => {
+  const [tabValue, setTabValue] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [hospital, setHospital] = useState(null);
   const [inventory, setInventory] = useState([]);
   const [requests, setRequests] = useState([]);
-  const [tabValue, setTabValue] = useState(0);
   const [openDialog, setOpenDialog] = useState(false);
-  const [dialogType, setDialogType] = useState('');
-  const [selectedUnit, setSelectedUnit] = useState(null);
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
-  
   const [newUnit, setNewUnit] = useState({
-    bloodType: '',
-    quantityMl: 450,
-    collectionDate: '',
-    expiryDate: '',
-    storageLocation: '',
+    blood_type: '',
+    quantity_ml: 450,
+    collection_date: '',
+    expiry_date: '',
+    storage_location: '',
+    testing_status: 'passed',
   });
 
-  const bloodTypes = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
-  const hospitalName = localStorage.getItem('bloodSuiteHospital') || 'Queen Elizabeth II Hospital';
+  const loadData = async () => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const [hospitalResponse, inventoryResponse, requestsResponse] = await Promise.all([
+        hospitalService.getMyHospital(),
+        inventoryService.getAllInventory(),
+        requestService.getAllRequests(),
+      ]);
+
+      setHospital(hospitalResponse.data || null);
+      setInventory(inventoryResponse.data || []);
+      setRequests(requestsResponse.data || []);
+    } catch (loadError) {
+      console.error('Failed to load hospital dashboard', loadError);
+      setError(loadError.error || loadError.message || 'Unable to load hospital dashboard data.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     loadData();
   }, []);
 
-  const loadData = () => {
-    // Demo inventory with FEFO ordering
-    const demoInventory = [
-      { id: 1, bloodType: 'O-', quantityMl: 450, expiryDate: '2024-04-15', status: 'available', collectionDate: '2024-03-20', storageLocation: 'Fridge A1' },
-      { id: 2, bloodType: 'A+', quantityMl: 450, expiryDate: '2024-04-10', status: 'available', collectionDate: '2024-03-15', storageLocation: 'Fridge B2' },
-      { id: 3, bloodType: 'B+', quantityMl: 450, expiryDate: '2024-03-28', status: 'available', collectionDate: '2024-03-01', storageLocation: 'Fridge C3' },
-      { id: 4, bloodType: 'O+', quantityMl: 450, expiryDate: '2024-03-25', status: 'available', collectionDate: '2024-02-28', storageLocation: 'Fridge A2' },
-      { id: 5, bloodType: 'AB+', quantityMl: 450, expiryDate: '2024-04-20', status: 'reserved', collectionDate: '2024-03-25', storageLocation: 'Fridge D1' },
-    ].sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate)); // FEFO ordering
-    
-    setInventory(demoInventory);
-    
-    setRequests([
-      { id: 1, bloodType: 'O-', quantityMl: 450, urgency: 'emergency', status: 'pending', patientName: 'John Doe', requiredDate: '2024-03-27', createdAt: '2024-03-26' },
-      { id: 2, bloodType: 'A+', quantityMl: 900, urgency: 'urgent', status: 'processing', patientName: 'Jane Smith', requiredDate: '2024-03-28', createdAt: '2024-03-25' },
-      { id: 3, bloodType: 'B+', quantityMl: 450, urgency: 'routine', status: 'fulfilled', patientName: 'Bob Johnson', requiredDate: '2024-03-29', createdAt: '2024-03-20' },
-    ]);
-  };
-
-  const getExpiryStatus = (expiryDate) => {
+  const expiringUnits = useMemo(() => {
     const today = new Date();
-    const expiry = new Date(expiryDate);
-    const daysLeft = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
-    
-    if (daysLeft < 3) return { label: 'Expiring Soon', color: '#f44336', variant: 'error' };
-    if (daysLeft < 7) return { label: 'Near Expiry', color: '#ff9800', variant: 'warning' };
-    return { label: 'Good', color: '#4caf50', variant: 'success' };
-  };
+    return inventory.filter((item) => {
+      const expiry = new Date(item.expiry_date);
+      const days = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+      return item.status === 'available' && days <= 7;
+    });
+  }, [inventory]);
 
-  const getUrgencyColor = (urgency) => {
-    switch(urgency) {
-      case 'emergency': return '#f44336';
-      case 'urgent': return '#ff9800';
-      default: return '#2196f3';
+  const inventoryByType = useMemo(() => (
+    bloodTypes.map((type) => ({
+      bloodType: type,
+      available: inventory.filter((item) => item.blood_type === type && item.status === 'available').length,
+      expiring: expiringUnits.filter((item) => item.blood_type === type).length,
+    }))
+  ), [expiringUnits, inventory]);
+
+  const handleAddUnit = async () => {
+    if (!hospital?.id) {
+      setError('Hospital profile is not available yet.');
+      return;
+    }
+
+    try {
+      await inventoryService.addBloodUnit({
+        hospital_id: hospital.id,
+        ...newUnit,
+      });
+      setOpenDialog(false);
+      setNewUnit({
+        blood_type: '',
+        quantity_ml: 450,
+        collection_date: '',
+        expiry_date: '',
+        storage_location: '',
+        testing_status: 'passed',
+      });
+      await loadData();
+    } catch (saveError) {
+      setError(saveError.error || saveError.message || 'Unable to add blood unit.');
     }
   };
 
-  const handleAddUnit = () => {
-    const newId = inventory.length + 1;
-    const unit = {
-      id: newId,
-      ...newUnit,
-      status: 'available',
-    };
-    setInventory([...inventory, unit].sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate)));
-    setOpenDialog(false);
-    setNewUnit({ bloodType: '', quantityMl: 450, collectionDate: '', expiryDate: '', storageLocation: '' });
-    setSnackbar({ open: true, message: 'Blood unit added successfully', severity: 'success' });
+  const handleDeleteUnit = async (id) => {
+    try {
+      await inventoryService.deleteBloodUnit(id);
+      await loadData();
+    } catch (deleteError) {
+      setError(deleteError.error || deleteError.message || 'Unable to remove blood unit.');
+    }
   };
 
-  const handleDeleteUnit = (id) => {
-    setInventory(inventory.filter(item => item.id !== id));
-    setSnackbar({ open: true, message: 'Blood unit removed', severity: 'info' });
-  };
-
-  const inventoryColumns = [
-    { field: 'bloodType', headerName: 'Blood Type', width: 120, renderCell: (params) => (
-      <Chip label={params.value} size="small" sx={{ bgcolor: '#d32f2f20', color: '#d32f2f', fontWeight: 600 }} />
-    )},
-    { field: 'quantityMl', headerName: 'Quantity (ml)', width: 120 },
-    { field: 'collectionDate', headerName: 'Collection Date', width: 130 },
-    { 
-      field: 'expiryDate', 
-      headerName: 'Expiry Date', 
-      width: 130,
-      renderCell: (params) => {
-        const status = getExpiryStatus(params.value);
-        return (
-          <Chip 
-            label={`${params.value} (${status.label})`} 
-            size="small" 
-            sx={{ bgcolor: `${status.color}20`, color: status.color }}
-          />
-        );
-      }
-    },
-    { field: 'storageLocation', headerName: 'Location', width: 120 },
-    {
-      field: 'status',
-      headerName: 'Status',
-      width: 100,
-      renderCell: (params) => (
-        <Chip 
-          label={params.value} 
-          size="small" 
-          sx={{ bgcolor: params.value === 'available' ? '#e8f5e9' : '#fff3e0', color: params.value === 'available' ? '#2e7d32' : '#ed6c02' }}
-        />
-      )
-    },
-    {
-      field: 'actions',
-      headerName: 'Actions',
-      width: 100,
-      renderCell: (params) => (
-        <IconButton size="small" color="error" onClick={() => handleDeleteUnit(params.row.id)}>
-          <DeleteIcon fontSize="small" />
-        </IconButton>
-      )
-    },
-  ];
-
-  const requestColumns = [
-    { field: 'bloodType', headerName: 'Blood Type', width: 120 },
-    { field: 'quantityMl', headerName: 'Quantity (ml)', width: 120 },
-    {
-      field: 'urgency',
-      headerName: 'Urgency',
-      width: 100,
-      renderCell: (params) => (
-        <Chip 
-          label={params.value} 
-          size="small" 
-          sx={{ bgcolor: `${getUrgencyColor(params.value)}20`, color: getUrgencyColor(params.value) }}
-        />
-      )
-    },
-    { field: 'patientName', headerName: 'Patient', width: 150 },
-    { field: 'requiredDate', headerName: 'Required By', width: 120 },
-    {
-      field: 'status',
-      headerName: 'Status',
-      width: 100,
-      renderCell: (params) => (
-        <Chip 
-          label={params.value} 
-          size="small" 
-          sx={{ 
-            bgcolor: params.value === 'fulfilled' ? '#e8f5e9' : params.value === 'pending' ? '#fff3e0' : '#e3f2fd',
-            color: params.value === 'fulfilled' ? '#2e7d32' : params.value === 'pending' ? '#ed6c02' : '#1976d2'
-          }}
-        />
-      )
-    },
-  ];
-
-  const lowStockItems = inventory.filter(item => {
-    const status = getExpiryStatus(item.expiryDate);
-    return status.variant === 'warning' || status.variant === 'error';
-  });
+  if (loading) {
+    return (
+      <Box display="flex" justifyContent="center" py={8}>
+        <CircularProgress sx={{ color: '#d32f2f' }} />
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: 3 }}>
-      {/* Header */}
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3} flexWrap="wrap" gap={2}>
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 700, color: '#d32f2f' }}>
             Hospital Dashboard
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            {hospitalName}
+            {hospital?.hospital_name || 'Hospital account'}
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => {
-            setDialogType('unit');
-            setOpenDialog(true);
-          }}
-          sx={{ bgcolor: '#d32f2f', '&:hover': { bgcolor: '#b71c1c' } }}
-        >
-          Add Blood Unit
-        </Button>
+        <Box display="flex" gap={1}>
+          <Button
+            variant="outlined"
+            startIcon={<RefreshIcon />}
+            onClick={loadData}
+            sx={{ borderColor: '#d32f2f', color: '#d32f2f' }}
+          >
+            Refresh
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => setOpenDialog(true)}
+            sx={{ bgcolor: '#d32f2f', '&:hover': { bgcolor: '#b71c1c' } }}
+          >
+            Add Blood Unit
+          </Button>
+        </Box>
       </Box>
 
-      {/* Alerts */}
-      {lowStockItems.length > 0 && (
-        <Alert severity="warning" sx={{ mb: 3, bgcolor: '#fff5f5' }}>
-          <Typography variant="subtitle2">Expiring Blood Units Alert</Typography>
-          <Typography variant="body2">
-            {lowStockItems.length} unit(s) are expiring within 7 days. Please prioritize their use.
-          </Typography>
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          {error}
         </Alert>
       )}
 
-      {/* Stats Cards */}
+      {expiringUnits.length > 0 && (
+        <Alert severity="warning" sx={{ mb: 3, bgcolor: '#fff5f5' }}>
+          {expiringUnits.length} unit(s) are expiring within 7 days. Prioritize their use.
+        </Alert>
+      )}
+
       <Grid container spacing={3} sx={{ mb: 4 }}>
         <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ borderTop: '4px solid #d32f2f' }}>
-            <CardContent>
-              <Typography variant="body2" color="text.secondary">Total Blood Units</Typography>
-              <Typography variant="h4" sx={{ fontWeight: 700 }}>{inventory.length}</Typography>
-            </CardContent>
-          </Card>
+          <StatCard title="Total Blood Units" value={inventory.length} color="#d32f2f" />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ borderTop: '4px solid #ff9800' }}>
-            <CardContent>
-              <Typography variant="body2" color="text.secondary">Pending Requests</Typography>
-              <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                {requests.filter(r => r.status === 'pending').length}
-              </Typography>
-            </CardContent>
-          </Card>
+          <StatCard title="Pending Requests" value={requests.filter((item) => item.status === 'pending').length} color="#ff9800" />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ borderTop: '4px solid #4caf50' }}>
-            <CardContent>
-              <Typography variant="body2" color="text.secondary">Fulfillment Rate</Typography>
-              <Typography variant="h4" sx={{ fontWeight: 700 }}>94%</Typography>
-            </CardContent>
-          </Card>
+          <StatCard title="Available Units" value={inventory.filter((item) => item.status === 'available').length} color="#2e7d32" />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ borderTop: '4px solid #2196f3' }}>
-            <CardContent>
-              <Typography variant="body2" color="text.secondary">Expiring Soon</Typography>
-              <Typography variant="h4" sx={{ fontWeight: 700, color: '#ff9800' }}>
-                {lowStockItems.length}
-              </Typography>
-            </CardContent>
-          </Card>
+          <StatCard title="Expiring Soon" value={expiringUnits.length} color="#1976d2" />
         </Grid>
       </Grid>
 
-      {/* Main Content Tabs */}
       <Paper sx={{ borderRadius: 2, overflow: 'hidden' }}>
         <Tabs
           value={tabValue}
-          onChange={(e, v) => setTabValue(v)}
+          onChange={(event, value) => setTabValue(value)}
           sx={{
             borderBottom: 1,
             borderColor: 'divider',
@@ -301,39 +229,102 @@ const HospitalDashboard = () => {
           <Tab label="Quick Stats" />
         </Tabs>
 
-        {/* Inventory Tab */}
         {tabValue === 0 && (
           <Box sx={{ p: 3 }}>
-            <DataGrid
-              rows={inventory}
-              columns={inventoryColumns}
-              pageSize={5}
-              rowsPerPageOptions={[5]}
-              autoHeight
-              disableSelectionOnClick
-              sx={{
-                '& .MuiDataGrid-columnHeaders': { bgcolor: '#f5f5f5' },
-                '& .MuiDataGrid-cell': { borderBottom: '1px solid #f0f0f0' },
-              }}
-            />
+            <TableContainer>
+              <Table>
+                <TableHead>
+                  <TableRow sx={{ bgcolor: '#f5f5f5' }}>
+                    <TableCell>Blood Type</TableCell>
+                    <TableCell>Quantity</TableCell>
+                    <TableCell>Collection</TableCell>
+                    <TableCell>Expiry</TableCell>
+                    <TableCell>Location</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell align="right">Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {inventory.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell>
+                        <Chip label={item.blood_type} size="small" sx={{ bgcolor: '#d32f2f20', color: '#d32f2f' }} />
+                      </TableCell>
+                      <TableCell>{item.quantity_ml} ml</TableCell>
+                      <TableCell>{item.collection_date}</TableCell>
+                      <TableCell>{item.expiry_date}</TableCell>
+                      <TableCell>{item.storage_location || 'Unspecified'}</TableCell>
+                      <TableCell>
+                        <Chip label={item.status} size="small" color={item.status === 'available' ? 'success' : 'warning'} />
+                      </TableCell>
+                      <TableCell align="right">
+                        <Button color="error" size="small" onClick={() => handleDeleteUnit(item.id)}>
+                          Remove
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {inventory.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={7} align="center">
+                        No inventory records found.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
           </Box>
         )}
 
-        {/* Requests Tab */}
         {tabValue === 1 && (
           <Box sx={{ p: 3 }}>
-            <DataGrid
-              rows={requests}
-              columns={requestColumns}
-              pageSize={5}
-              rowsPerPageOptions={[5]}
-              autoHeight
-              disableSelectionOnClick
-            />
+            <TableContainer>
+              <Table>
+                <TableHead>
+                  <TableRow sx={{ bgcolor: '#f5f5f5' }}>
+                    <TableCell>Blood Type</TableCell>
+                    <TableCell>Quantity</TableCell>
+                    <TableCell>Urgency</TableCell>
+                    <TableCell>Patient</TableCell>
+                    <TableCell>Required By</TableCell>
+                    <TableCell>Status</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {requests.map((request) => (
+                    <TableRow key={request.id}>
+                      <TableCell>
+                        <Chip label={request.blood_type} size="small" sx={{ bgcolor: '#d32f2f20', color: '#d32f2f' }} />
+                      </TableCell>
+                      <TableCell>{request.quantity_ml} ml</TableCell>
+                      <TableCell>
+                        <Chip
+                          label={request.urgency}
+                          size="small"
+                          color={request.urgency === 'emergency' ? 'error' : request.urgency === 'urgent' ? 'warning' : 'info'}
+                        />
+                      </TableCell>
+                      <TableCell>{request.patient_name || 'Not provided'}</TableCell>
+                      <TableCell>{request.required_date || 'Not set'}</TableCell>
+                      <TableCell>
+                        <Chip label={request.status} size="small" color={request.status === 'fulfilled' ? 'success' : request.status === 'pending' ? 'warning' : 'info'} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {requests.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} align="center">
+                        No request records found.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
           </Box>
         )}
 
-        {/* Quick Stats Tab */}
         {tabValue === 2 && (
           <Box sx={{ p: 3 }}>
             <Grid container spacing={3}>
@@ -341,33 +332,23 @@ const HospitalDashboard = () => {
                 <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, color: '#d32f2f' }}>
                   Inventory by Blood Type
                 </Typography>
-                <TableContainer component={Paper} elevation={0}>
+                <TableContainer component={Paper} variant="outlined">
                   <Table>
                     <TableHead>
-                      <TableRow sx={{ bgcolor: '#f5f5f5' }}>
+                      <TableRow>
                         <TableCell>Blood Type</TableCell>
                         <TableCell align="right">Available Units</TableCell>
                         <TableCell align="right">Expiring Soon</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {bloodTypes.map(type => {
-                        const units = inventory.filter(i => i.bloodType === type);
-                        const expiringSoon = units.filter(u => getExpiryStatus(u.expiryDate).variant !== 'success').length;
-                        return (
-                          <TableRow key={type}>
-                            <TableCell>
-                              <Chip label={type} size="small" sx={{ bgcolor: '#d32f2f20', color: '#d32f2f' }} />
-                            </TableCell>
-                            <TableCell align="right">{units.length}</TableCell>
-                            <TableCell align="right">
-                              {expiringSoon > 0 && (
-                                <Chip label={`${expiringSoon} expiring`} size="small" color="warning" />
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
+                      {inventoryByType.map((item) => (
+                        <TableRow key={item.bloodType}>
+                          <TableCell>{item.bloodType}</TableCell>
+                          <TableCell align="right">{item.available}</TableCell>
+                          <TableCell align="right">{item.expiring}</TableCell>
+                        </TableRow>
+                      ))}
                     </TableBody>
                   </Table>
                 </TableContainer>
@@ -377,22 +358,24 @@ const HospitalDashboard = () => {
                   Recent Activity
                 </Typography>
                 <Paper variant="outlined" sx={{ p: 2 }}>
-                  {requests.slice(0, 5).map((req, idx) => (
-                    <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 1, borderBottom: idx < 4 ? '1px solid #e0e0e0' : 'none' }}>
-                      <Avatar sx={{ bgcolor: `${getUrgencyColor(req.urgency)}20`, width: 32, height: 32 }}>
-                        {req.urgency === 'emergency' ? <AlertIcon fontSize="small" /> : <ScheduleIcon fontSize="small" />}
-                      </Avatar>
+                  {requests.slice(0, 5).map((request) => (
+                    <Box key={request.id} sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 1, borderBottom: '1px solid #f0f0f0' }}>
+                      {request.urgency === 'emergency' ? <WarningIcon sx={{ color: '#f44336' }} /> : <ScheduleIcon sx={{ color: '#d32f2f' }} />}
                       <Box sx={{ flex: 1 }}>
                         <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                          {req.bloodType} - {req.quantityMl}ml
+                          {request.blood_type} - {request.quantity_ml} ml
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
-                          {req.patientName} • {req.urgency} • {req.createdAt}
+                          {request.patient_name || 'Unnamed patient'} • {request.status} • {new Date(request.createdAt).toLocaleDateString()}
                         </Typography>
                       </Box>
-                      <Chip label={req.status} size="small" />
                     </Box>
                   ))}
+                  {requests.length === 0 && (
+                    <Typography variant="body2" color="text.secondary">
+                      No recent request activity.
+                    </Typography>
+                  )}
                 </Paper>
               </Grid>
             </Grid>
@@ -400,7 +383,6 @@ const HospitalDashboard = () => {
         )}
       </Paper>
 
-      {/* Add Unit Dialog */}
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ bgcolor: '#fff5f5', color: '#d32f2f' }}>
           Add Blood Unit
@@ -412,10 +394,10 @@ const HospitalDashboard = () => {
                 fullWidth
                 select
                 label="Blood Type"
-                value={newUnit.bloodType}
-                onChange={(e) => setNewUnit({ ...newUnit, bloodType: e.target.value })}
+                value={newUnit.blood_type}
+                onChange={(event) => setNewUnit({ ...newUnit, blood_type: event.target.value })}
               >
-                {bloodTypes.map(type => (
+                {bloodTypes.map((type) => (
                   <MenuItem key={type} value={type}>{type}</MenuItem>
                 ))}
               </TextField>
@@ -425,8 +407,8 @@ const HospitalDashboard = () => {
                 fullWidth
                 label="Quantity (ml)"
                 type="number"
-                value={newUnit.quantityMl}
-                onChange={(e) => setNewUnit({ ...newUnit, quantityMl: parseInt(e.target.value) })}
+                value={newUnit.quantity_ml}
+                onChange={(event) => setNewUnit({ ...newUnit, quantity_ml: Number(event.target.value) })}
               />
             </Grid>
             <Grid item xs={6}>
@@ -434,8 +416,8 @@ const HospitalDashboard = () => {
                 fullWidth
                 label="Collection Date"
                 type="date"
-                value={newUnit.collectionDate}
-                onChange={(e) => setNewUnit({ ...newUnit, collectionDate: e.target.value })}
+                value={newUnit.collection_date}
+                onChange={(event) => setNewUnit({ ...newUnit, collection_date: event.target.value })}
                 InputLabelProps={{ shrink: true }}
               />
             </Grid>
@@ -444,8 +426,8 @@ const HospitalDashboard = () => {
                 fullWidth
                 label="Expiry Date"
                 type="date"
-                value={newUnit.expiryDate}
-                onChange={(e) => setNewUnit({ ...newUnit, expiryDate: e.target.value })}
+                value={newUnit.expiry_date}
+                onChange={(event) => setNewUnit({ ...newUnit, expiry_date: event.target.value })}
                 InputLabelProps={{ shrink: true }}
               />
             </Grid>
@@ -453,9 +435,8 @@ const HospitalDashboard = () => {
               <TextField
                 fullWidth
                 label="Storage Location"
-                value={newUnit.storageLocation}
-                onChange={(e) => setNewUnit({ ...newUnit, storageLocation: e.target.value })}
-                placeholder="e.g., Fridge A1"
+                value={newUnit.storage_location}
+                onChange={(event) => setNewUnit({ ...newUnit, storage_location: event.target.value })}
               />
             </Grid>
           </Grid>
@@ -467,24 +448,13 @@ const HospitalDashboard = () => {
           <Button
             onClick={handleAddUnit}
             variant="contained"
+            startIcon={<BloodIcon />}
             sx={{ bgcolor: '#d32f2f', '&:hover': { bgcolor: '#b71c1c' } }}
           >
             Add Unit
           </Button>
         </DialogActions>
       </Dialog>
-
-      {/* Snackbar */}
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={3000}
-        onClose={() => setSnackbar({ ...snackbar, open: false })}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      >
-        <Alert severity={snackbar.severity} sx={{ width: '100%' }}>
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
     </Box>
   );
 };

@@ -275,6 +275,95 @@ npm start
 
 ---
 
+## **STEP 10: Test Donor Notification System** 🔔
+
+### **Automatic Notifications (Integrated with Forecasts)**
+
+The system automatically sends donor notifications when blood shortages are detected. Test this by:
+
+```powershell
+cd backend
+node test-donor-notifications.js
+```
+
+**Expected Output:**
+```
+Testing donor notification system...
+
+1. Checking shortage alerts...
+Shortage alerts: { success: true, data: [...] }
+
+2. Testing manual donor notification trigger...
+Donor notification result: {
+  success: true,
+  data: {
+    eligibleDonors: 5,
+    notificationsSent: 3,
+    bloodType: 'A+',
+    shortageAmount: 5
+  }
+}
+
+3. Checking created notifications...
+Recent notifications: [
+  {
+    id: '...',
+    type: 'donation_request',
+    priority: 'high',
+    title: 'Urgent: Blood Shortage - A+ Needed',
+    message: 'We urgently need A+ blood donors...',
+    actionUrl: '/donate',
+    expiresAt: '2024-01-15T10:00:00.000Z'
+  }
+]
+
+✅ Donor notification system test completed successfully!
+```
+
+**What it tests:**
+- Donor eligibility checking (blood type, donation history, location)
+- Automatic notification creation
+- Integration with forecast shortage alerts
+- Notification priority and expiry handling
+
+### **Manual Donor Notification Trigger**
+
+You can also manually trigger donor notifications for testing:
+
+```powershell
+# Using PowerShell with JWT token
+$token = "YOUR_ADMIN_TOKEN"
+$headers = @{
+    Authorization = "Bearer $token"
+    "Content-Type" = "application/json"
+}
+
+$body = @{
+    bloodType = "A+"
+    shortageAmount = 5
+} | ConvertTo-Json
+
+Invoke-WebRequest -Uri http://localhost:5000/api/forecast/notify-donors `
+  -Method POST `
+  -Headers $headers `
+  -Body $body | ConvertTo-Json
+```
+
+**Expected Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "eligibleDonors": 5,
+    "notificationsSent": 3,
+    "bloodType": "A+",
+    "shortageAmount": 5
+  }
+}
+```
+
+---
+
 ## **Quick Test Summary**
 
 | Component | Command | Expected | Status |
@@ -286,6 +375,7 @@ npm start
 | Inventory | `GET /api/inventory` | Blood types | ✅ |
 | Forecast | `python forecast_demo.py` | PNG chart | ✅ |
 | Frontend | `npm start` | UI on :3000 | ✅ |
+| Donor Notifications | `node test-donor-notifications.js` | Notifications sent | ✅ |
 
 ---
 

@@ -80,13 +80,16 @@ const updateDonorProfile = async (req, res) => {
 // Get nearby donors using Haversine formula
 const getNearbyDonors = async (req, res) => {
   try {
-    const { hospitalId, radiusKm = 10, bloodType } = req.query;
+    const { hospitalId, radiusKm = 10, bloodType, latitude, longitude } = req.query;
 
     // Get hospital coordinates
     const { Hospital } = require('../models');
     const hospital = await Hospital.findByPk(hospitalId);
-    
-    if (!hospital || !hospital.latitude || !hospital.longitude) {
+
+    const originLatitude = latitude != null ? parseFloat(latitude) : parseFloat(hospital?.latitude);
+    const originLongitude = longitude != null ? parseFloat(longitude) : parseFloat(hospital?.longitude);
+
+    if (!hospital || Number.isNaN(originLatitude) || Number.isNaN(originLongitude)) {
       return res.status(400).json({ success: false, error: 'Hospital location not available' });
     }
 
@@ -98,6 +101,7 @@ const getNearbyDonors = async (req, res) => {
         longitude: { [Op.ne]: null },
         ...(bloodType && { blood_type: bloodType }),
       },
+      include: [{ model: User, as: 'user', attributes: ['email', 'is_active'] }],
     });
 
     // Calculate distances
@@ -105,8 +109,8 @@ const getNearbyDonors = async (req, res) => {
       .map(donor => ({
         ...donor.toJSON(),
         distance: haversineDistance(
-          parseFloat(hospital.latitude),
-          parseFloat(hospital.longitude),
+          originLatitude,
+          originLongitude,
           parseFloat(donor.latitude),
           parseFloat(donor.longitude)
         ),

@@ -130,7 +130,32 @@ class ForecastService:
     
     def get_shortage_alerts(self):
         """Get shortage alerts for all blood types"""
-        return data_service.get_shortage_alerts()
+        alerts = []
+
+        for blood_type in config.BLOOD_TYPES:
+            try:
+                forecast = self.get_forecast(blood_type, '7day')
+                current_stock = int(forecast.get('current_stock') or 0)
+                predicted_demand_7d = int(forecast.get('total_predicted_demand') or 0)
+                shortage = max(0, predicted_demand_7d - current_stock)
+
+                if shortage > 0:
+                    alerts.append({
+                        'blood_type': blood_type,
+                        'current_stock': current_stock,
+                        'predicted_demand_7d': predicted_demand_7d,
+                        'shortage': shortage,
+                        'severity': 'high' if shortage > 10 else 'medium',
+                        'days_until_shortage': 7
+                    })
+            except Exception as e:
+                print(f"Error generating shortage alert for {blood_type}: {e}")
+
+        return sorted(
+            alerts,
+            key=lambda alert: (alert['severity'] == 'high', alert['shortage']),
+            reverse=True
+        )
     
     def get_model_accuracy(self):
         """Get accuracy metrics for all models"""

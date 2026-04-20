@@ -1,136 +1,182 @@
-// src/pages/Manager/ManagerDashboard.js
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
+  Avatar,
   Box,
-  Grid,
-  Paper,
-  Typography,
   Card,
   CardContent,
-  Avatar,
   Chip,
+  CircularProgress,
+  Grid,
+  IconButton,
+  Paper,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Button,
   Tabs,
   Tab,
-  Alert,
-  IconButton,
   Tooltip,
+  Typography,
 } from '@mui/material';
 import {
-  Bloodtype as BloodIcon,
-  TrendingUp as TrendingIcon,
-  People as PeopleIcon,
-  LocalHospital as HospitalIcon,
-  Assessment as AssessmentIcon,
-  Download as DownloadIcon,
-  Refresh as RefreshIcon,
-  Warning as WarningIcon,
-  CheckCircle as CheckIcon,
-  Timeline as TimelineIcon,
   Analytics as AnalyticsIcon,
+  Bloodtype as BloodIcon,
+  Download as DownloadIcon,
+  LocalHospital as HospitalIcon,
+  People as PeopleIcon,
+  Refresh as RefreshIcon,
+  TrendingUp as TrendingIcon,
+  Warning as WarningIcon,
 } from '@mui/icons-material';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line } from 'recharts';
+import analyticsService from '../../services/analyticsService';
+import forecastService from '../../services/forecastService';
+
+const StatCard = ({ title, value, icon, color, helper }) => (
+  <Card sx={{ height: '100%', borderTop: `4px solid ${color}` }}>
+    <CardContent>
+      <Box display="flex" justifyContent="space-between" alignItems="center">
+        <Box>
+          <Typography variant="body2" color="text.secondary" gutterBottom>
+            {title}
+          </Typography>
+          <Typography variant="h4" sx={{ fontWeight: 700 }}>
+            {value}
+          </Typography>
+          {helper && (
+            <Typography variant="caption" color="text.secondary">
+              {helper}
+            </Typography>
+          )}
+        </Box>
+        <Avatar sx={{ bgcolor: `${color}20`, color, width: 48, height: 48 }}>
+          {icon}
+        </Avatar>
+      </Box>
+    </CardContent>
+  </Card>
+);
 
 const ManagerDashboard = () => {
   const [tabValue, setTabValue] = useState(0);
-  const [forecast, setForecast] = useState([]);
-  const [stats, setStats] = useState({
-    totalBloodUnits: 342,
-    totalDonors: 156,
-    totalHospitals: 8,
-    activeRequests: 12,
-    fulfillmentRate: 94,
-    wastageRate: 6,
-  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [analytics, setAnalytics] = useState(null);
+  const [forecastSummary, setForecastSummary] = useState([]);
+  const [shortageAlerts, setShortageAlerts] = useState([]);
+
+  const loadData = async () => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const [analyticsResponse, forecastResponse, alertsResponse] = await Promise.all([
+        analyticsService.getDashboard(),
+        forecastService.getForecasts({ horizon: '30day' }),
+        forecastService.getShortageAlerts(),
+      ]);
+
+      setAnalytics(analyticsResponse.data || null);
+      setForecastSummary(forecastResponse.data?.forecasts || []);
+
+      const alerts = Array.isArray(alertsResponse.data)
+        ? alertsResponse.data
+        : alertsResponse.data?.alerts || [];
+
+      setShortageAlerts(alerts.map((alert) => ({
+        bloodType: alert.bloodType || alert.blood_type,
+        currentStock: alert.currentStock || alert.current_stock || 0,
+        predictedDemand: alert.predictedDemand || alert.predicted_demand_7d || 0,
+        shortage: alert.shortage || 0,
+        severity: alert.severity || 'medium',
+      })));
+    } catch (loadError) {
+      console.error('Failed to load manager dashboard', loadError);
+      setError(loadError.error || loadError.message || 'Unable to load manager dashboard data.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     loadData();
   }, []);
 
-  const loadData = () => {
-    setForecast([
-      { bloodType: 'O-', currentStock: 28, predictedDemand7d: 35, predictedDemand30d: 120, predictedDemand90d: 350, shortageRisk: 'high' },
-      { bloodType: 'O+', currentStock: 120, predictedDemand7d: 85, predictedDemand30d: 320, predictedDemand90d: 980, shortageRisk: 'low' },
-      { bloodType: 'A+', currentStock: 62, predictedDemand7d: 55, predictedDemand30d: 210, predictedDemand90d: 640, shortageRisk: 'medium' },
-      { bloodType: 'B+', currentStock: 45, predictedDemand7d: 48, predictedDemand30d: 180, predictedDemand90d: 550, shortageRisk: 'medium' },
-      { bloodType: 'AB+', currentStock: 35, predictedDemand7d: 25, predictedDemand30d: 95, predictedDemand90d: 290, shortageRisk: 'low' },
-    ]);
-  };
-
-  const inventoryByType = [
-    { name: 'O+', value: 120, color: '#d32f2f' },
-    { name: 'A+', value: 62, color: '#ff9800' },
-    { name: 'B+', value: 45, color: '#2196f3' },
-    { name: 'O-', value: 28, color: '#4caf50' },
-    { name: 'AB+', value: 35, color: '#9c27b0' },
-    { name: 'Others', value: 52, color: '#795548' },
-  ];
-
-  const requestTrends = [
-    { month: 'Jan', requests: 42, fulfilled: 38 },
-    { month: 'Feb', requests: 48, fulfilled: 45 },
-    { month: 'Mar', requests: 55, fulfilled: 52 },
-    { month: 'Apr', requests: 62, fulfilled: 58 },
-    { month: 'May', requests: 58, fulfilled: 55 },
-    { month: 'Jun', requests: 72, fulfilled: 68 },
-  ];
-
-  const StatCard = ({ title, value, icon, color, trend }) => (
-    <Card sx={{ height: '100%', borderTop: `4px solid ${color}` }}>
-      <CardContent>
-        <Box display="flex" justifyContent="space-between" alignItems="center">
-          <Box>
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              {title}
-            </Typography>
-            <Typography variant="h4" sx={{ fontWeight: 700 }}>
-              {value}
-            </Typography>
-            {trend && (
-              <Typography variant="caption" color="success.main">
-                {trend}
-              </Typography>
-            )}
-          </Box>
-          <Avatar sx={{ bgcolor: `${color}20`, color: color, width: 48, height: 48 }}>
-            {icon}
-          </Avatar>
-        </Box>
-      </CardContent>
-    </Card>
-  );
-
-  const getRiskColor = (risk) => {
-    switch(risk) {
-      case 'high': return '#f44336';
-      case 'medium': return '#ff9800';
-      default: return '#4caf50';
+  const stats = useMemo(() => {
+    if (!analytics) {
+      return {
+        totalBloodUnits: 0,
+        totalDonors: 0,
+        totalHospitals: 0,
+        activeRequests: 0,
+        fulfillmentRate: 0,
+        criticalStock: shortageAlerts.length,
+      };
     }
-  };
+
+    return {
+      totalBloodUnits: (analytics.inventory || []).reduce((sum, item) => sum + Number(item.count || 0), 0),
+      totalDonors: analytics.donors?.total || 0,
+      totalHospitals: analytics.hospitals?.approved || analytics.hospitals?.total || 0,
+      activeRequests: (analytics.requests?.total || 0) - (analytics.requests?.fulfilled || 0),
+      fulfillmentRate: analytics.requests?.fulfillmentRate || 0,
+      criticalStock: shortageAlerts.filter((alert) => alert.severity === 'high').length,
+    };
+  }, [analytics, shortageAlerts]);
+
+  const inventoryByType = useMemo(() => (
+    (analytics?.inventory || []).map((item, index) => ({
+      name: item.blood_type,
+      value: Number(item.count || 0),
+      color: ['#d32f2f', '#ff9800', '#2196f3', '#4caf50', '#9c27b0', '#795548', '#607d8b', '#e91e63'][index % 8],
+    }))
+  ), [analytics]);
+
+  const requestTrends = useMemo(() => {
+    const grouped = new Map();
+
+    (analytics?.requestTrends || []).forEach((item) => {
+      const key = new Date(item.date).toISOString().split('T')[0];
+      const current = grouped.get(key) || { date: key, requests: 0, urgent: 0 };
+      current.requests += Number(item.count || 0);
+      if (item.urgency === 'urgent' || item.urgency === 'emergency') {
+        current.urgent += Number(item.count || 0);
+      }
+      grouped.set(key, current);
+    });
+
+    return [...grouped.values()].sort((a, b) => new Date(a.date) - new Date(b.date)).slice(-10);
+  }, [analytics]);
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
+        <CircularProgress sx={{ color: '#d32f2f' }} />
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: 3 }}>
-      {/* Header */}
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 700, color: '#d32f2f' }}>
             Blood Bank Manager Dashboard
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Maseru Central Blood Bank • Read-Only Analytics
+            Live operational overview from inventory, requests, donors, and forecast services
           </Typography>
         </Box>
         <Box>
-          <Tooltip title="Export Report">
-            <IconButton sx={{ color: '#d32f2f' }}>
-              <DownloadIcon />
-            </IconButton>
+          <Tooltip title="Export is not yet wired for this page">
+            <span>
+              <IconButton sx={{ color: '#d32f2f' }} disabled>
+                <DownloadIcon />
+              </IconButton>
+            </span>
           </Tooltip>
           <Tooltip title="Refresh Data">
             <IconButton sx={{ color: '#d32f2f' }} onClick={loadData}>
@@ -140,20 +186,23 @@ const ManagerDashboard = () => {
         </Box>
       </Box>
 
-      {/* Shortage Alerts */}
-      {forecast.filter(f => f.shortageRisk === 'high').length > 0 && (
-        <Alert severity="error" sx={{ mb: 3, bgcolor: '#ffebee' }}>
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          {error}
+        </Alert>
+      )}
+
+      {shortageAlerts.length > 0 && (
+        <Alert severity="warning" sx={{ mb: 3, bgcolor: '#fff5f5' }}>
           <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-            Critical Shortage Alert
+            Shortage Risk Detected
           </Typography>
           <Typography variant="body2">
-            {forecast.filter(f => f.shortageRisk === 'high').map(f => f.bloodType).join(', ')} blood types are projected to be in shortage within 7 days.
-            Immediate action recommended.
+            {shortageAlerts.map((alert) => alert.bloodType).join(', ')} currently have forecasted supply pressure.
           </Typography>
         </Alert>
       )}
 
-      {/* Stats Cards - READ-ONLY */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
         <Grid item xs={12} sm={6} md={3}>
           <StatCard title="Total Blood Units" value={stats.totalBloodUnits} icon={<BloodIcon />} color="#d32f2f" />
@@ -162,18 +211,17 @@ const ManagerDashboard = () => {
           <StatCard title="Active Donors" value={stats.totalDonors} icon={<PeopleIcon />} color="#1976d2" />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <StatCard title="Hospitals" value={stats.totalHospitals} icon={<HospitalIcon />} color="#2e7d32" />
+          <StatCard title="Approved Hospitals" value={stats.totalHospitals} icon={<HospitalIcon />} color="#2e7d32" />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <StatCard title="Fulfillment Rate" value={`${stats.fulfillmentRate}%`} icon={<TrendingIcon />} color="#ff9800" />
+          <StatCard title="Fulfillment Rate" value={`${stats.fulfillmentRate}%`} icon={<TrendingIcon />} color="#ff9800" helper={`${stats.activeRequests} active requests`} />
         </Grid>
       </Grid>
 
-      {/* Tabs */}
       <Paper sx={{ borderRadius: 2, overflow: 'hidden' }}>
         <Tabs
           value={tabValue}
-          onChange={(e, v) => setTabValue(v)}
+          onChange={(event, value) => setTabValue(value)}
           sx={{
             borderBottom: 1,
             borderColor: 'divider',
@@ -187,7 +235,6 @@ const ManagerDashboard = () => {
           <Tab label="Inventory Analytics" />
         </Tabs>
 
-        {/* Overview Tab */}
         {tabValue === 0 && (
           <Box sx={{ p: 3 }}>
             <Grid container spacing={3}>
@@ -195,47 +242,62 @@ const ManagerDashboard = () => {
                 <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, color: '#d32f2f' }}>
                   Blood Inventory Distribution
                 </Typography>
-                <PieChart width={400} height={300}>
-                  <Pie
-                    data={inventoryByType}
-                    cx={200}
-                    cy={150}
-                    innerRadius={60}
-                    outerRadius={100}
-                    paddingAngle={5}
-                    dataKey="value"
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  >
-                    {inventoryByType.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <RechartsTooltip />
-                </PieChart>
+                {inventoryByType.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">
+                    No inventory data available.
+                  </Typography>
+                ) : (
+                  <ResponsiveContainer width="100%" height={320}>
+                    <PieChart>
+                      <Pie
+                        data={inventoryByType}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={100}
+                        paddingAngle={3}
+                        dataKey="value"
+                        label={({ name, value }) => `${name}: ${value}`}
+                      >
+                        {inventoryByType.map((entry) => (
+                          <Cell key={entry.name} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
               </Grid>
               <Grid item xs={12} md={6}>
                 <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, color: '#d32f2f' }}>
-                  Request Trends (Last 6 Months)
+                  Request Trends
                 </Typography>
-                <BarChart width={450} height={300} data={requestTrends}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <RechartsTooltip />
-                  <Legend />
-                  <Bar dataKey="requests" fill="#d32f2f" />
-                  <Bar dataKey="fulfilled" fill="#4caf50" />
-                </BarChart>
+                {requestTrends.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">
+                    No request trend data available.
+                  </Typography>
+                ) : (
+                  <ResponsiveContainer width="100%" height={320}>
+                    <BarChart data={requestTrends}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" />
+                      <YAxis />
+                      <RechartsTooltip />
+                      <Legend />
+                      <Bar dataKey="requests" fill="#d32f2f" />
+                      <Bar dataKey="urgent" fill="#ff9800" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
               </Grid>
             </Grid>
           </Box>
         )}
 
-        {/* Demand Forecast Tab */}
         {tabValue === 1 && (
           <Box sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, color: '#d32f2f', mb: 3 }}>
-              7-Day Demand Forecast
+              Forecast Summary by Blood Type
             </Typography>
             <TableContainer component={Paper} elevation={0}>
               <Table>
@@ -243,103 +305,109 @@ const ManagerDashboard = () => {
                   <TableRow sx={{ bgcolor: '#f5f5f5' }}>
                     <TableCell>Blood Type</TableCell>
                     <TableCell align="right">Current Stock</TableCell>
-                    <TableCell align="right">Predicted Demand (7d)</TableCell>
                     <TableCell align="right">Predicted Demand (30d)</TableCell>
-                    <TableCell align="right">Predicted Demand (90d)</TableCell>
-                    <TableCell align="right">Shortage Risk</TableCell>
-                    <TableCell align="right">Recommendation</TableCell>
+                    <TableCell align="right">Shortage Alert</TableCell>
+                    <TableCell align="right">Available Models</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {forecast.map((item) => (
-                    <TableRow key={item.bloodType}>
+                  {forecastSummary.map((item) => (
+                    <TableRow key={item.blood_type}>
                       <TableCell>
-                        <Chip label={item.bloodType} size="small" sx={{ bgcolor: '#d32f2f20', color: '#d32f2f' }} />
+                        <Chip label={item.blood_type} size="small" sx={{ bgcolor: '#d32f2f20', color: '#d32f2f' }} />
                       </TableCell>
-                      <TableCell align="right">{item.currentStock} units</TableCell>
-                      <TableCell align="right">{item.predictedDemand7d} units</TableCell>
-                      <TableCell align="right">{item.predictedDemand30d} units</TableCell>
-                      <TableCell align="right">{item.predictedDemand90d} units</TableCell>
+                      <TableCell align="right">{item.current_stock}</TableCell>
+                      <TableCell align="right">{item.total_predicted_demand}</TableCell>
                       <TableCell align="right">
                         <Chip
-                          label={item.shortageRisk === 'high' ? 'HIGH RISK' : item.shortageRisk === 'medium' ? 'Medium Risk' : 'Low Risk'}
+                          label={item.shortage_alert ? 'High risk' : 'Stable'}
                           size="small"
-                          sx={{ bgcolor: `${getRiskColor(item.shortageRisk)}20`, color: getRiskColor(item.shortageRisk) }}
+                          color={item.shortage_alert ? 'warning' : 'success'}
                         />
                       </TableCell>
                       <TableCell align="right">
-                        {item.shortageRisk === 'high' && (
-                          <Button size="small" variant="outlined" sx={{ borderColor: '#d32f2f', color: '#d32f2f' }}>
-                            Schedule Drive
-                          </Button>
-                        )}
-                        {item.shortageRisk === 'medium' && (
-                          <Typography variant="caption">Monitor Stock</Typography>
-                        )}
-                        {item.shortageRisk === 'low' && (
-                          <Typography variant="caption">Adequate Supply</Typography>
-                        )}
+                        {Object.entries(item.models_available || {})
+                          .filter(([, enabled]) => enabled)
+                          .map(([name]) => name.toUpperCase())
+                          .join(', ') || 'Fallback'}
                       </TableCell>
                     </TableRow>
                   ))}
+                  {forecastSummary.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} align="center">
+                        Forecast data is not available yet.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </TableContainer>
           </Box>
         )}
 
-        {/* Inventory Analytics Tab */}
         {tabValue === 2 && (
           <Box sx={{ p: 3 }}>
             <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
+              <Grid item xs={12} md={7}>
                 <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, color: '#d32f2f' }}>
-                  Expiry Analysis
+                  Daily Request Volume
                 </Typography>
-                <Paper variant="outlined" sx={{ p: 2 }}>
-                  <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                    <Typography variant="body2">Expiring in &lt;7 days</Typography>
-                    <Chip label="12 units" size="small" color="warning" />
-                  </Box>
-                  <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                    <Typography variant="body2">Expiring in &lt;3 days</Typography>
-                    <Chip label="4 units" size="small" color="error" />
-                  </Box>
-                  <Box display="flex" justifyContent="space-between" alignItems="center">
-                    <Typography variant="body2">Wastage Rate (Last 30d)</Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 600, color: '#ff9800' }}>6%</Typography>
-                  </Box>
-                </Paper>
+                {requestTrends.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">
+                    No request trend data available.
+                  </Typography>
+                ) : (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={requestTrends}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" />
+                      <YAxis />
+                      <RechartsTooltip />
+                      <Legend />
+                      <Line type="monotone" dataKey="requests" stroke="#d32f2f" strokeWidth={2} />
+                      <Line type="monotone" dataKey="urgent" stroke="#ff9800" strokeWidth={2} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
               </Grid>
-              <Grid item xs={12} md={6}>
+              <Grid item xs={12} md={5}>
                 <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, color: '#d32f2f' }}>
-                  Donor Demographics
+                  Current Shortage Alerts
                 </Typography>
-                <Paper variant="outlined" sx={{ p: 2 }}>
-                  <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                    <Typography variant="body2">Active Donors</Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>156</Typography>
+                {shortageAlerts.length === 0 ? (
+                  <Alert severity="success">No active shortage alerts right now.</Alert>
+                ) : (
+                  <Box sx={{ display: 'grid', gap: 2 }}>
+                    {shortageAlerts.map((alert) => (
+                      <Paper key={alert.bloodType} sx={{ p: 2, borderLeft: `4px solid ${alert.severity === 'high' ? '#f44336' : '#ff9800'}` }}>
+                        <Box display="flex" justifyContent="space-between" alignItems="center">
+                          <Box>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                              {alert.bloodType}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              Stock {alert.currentStock} vs demand {alert.predictedDemand}
+                            </Typography>
+                          </Box>
+                          <Avatar sx={{ bgcolor: '#fff5f5', color: alert.severity === 'high' ? '#f44336' : '#ff9800' }}>
+                            <WarningIcon />
+                          </Avatar>
+                        </Box>
+                      </Paper>
+                    ))}
                   </Box>
-                  <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                    <Typography variant="body2">New Donors (Last 30d)</Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>23</Typography>
-                  </Box>
-                  <Box display="flex" justifyContent="space-between" alignItems="center">
-                    <Typography variant="body2">Donation Frequency (Avg)</Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>2.3x/year</Typography>
-                  </Box>
-                </Paper>
+                )}
               </Grid>
             </Grid>
           </Box>
         )}
       </Paper>
 
-      {/* Footer Note */}
       <Box sx={{ mt: 3, textAlign: 'center' }}>
         <Typography variant="caption" color="text.secondary">
           <AnalyticsIcon sx={{ fontSize: 12, verticalAlign: 'middle', mr: 0.5 }} />
-          Data refreshed every 30 minutes • AI-powered forecasts based on historical trends
+          Live metrics sourced from PostgreSQL and the forecast service
         </Typography>
       </Box>
     </Box>

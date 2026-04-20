@@ -14,6 +14,7 @@ import Register from './pages/Register';
 import AdminDashboard from './pages/Admin/AdminDashboard';
 import UserManagement from './pages/Admin/UserManagement';
 import HospitalApproval from './pages/Admin/HospitalApproval';
+import DataImport from './pages/Admin/DataImport';
 
 // Hospital Pages
 import HospitalDashboard from './pages/Hospital/HospitalDashboard';
@@ -37,6 +38,10 @@ import AnalyticsDashboard from './pages/Manager/AnalyticsDashboard';
 import ForecastReports from './pages/Manager/ForecastReports';
 import ExportReports from './pages/Manager/ExportReports';
 import RequestHistory from './pages/Hospital/RequestHistory';
+
+// Common Pages
+import Notifications from './pages/Notifications';
+import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
 import Help from './pages/Help';
 
@@ -61,6 +66,7 @@ function App() {
                   <Route path="/admin/dashboard" element={<AdminDashboard />} />
                   <Route path="/admin/users" element={<UserManagement />} />
                   <Route path="/admin/hospitals/pending" element={<HospitalApproval />} />
+                  <Route path="/admin/data-import" element={<DataImport />} />
 
                   {/* Hospital Routes */}
                   <Route path="/hospital/dashboard" element={<HospitalDashboard />} />
@@ -81,9 +87,14 @@ function App() {
 
                   {/* Manager Routes */}
                   <Route path="/manager/dashboard" element={<ManagerDashboard />} />
-                  <Route path="/analytics" element={<AnalyticsDashboard />} />
+                  <Route path="/manager/analytics" element={<AnalyticsDashboard />} />
+                  <Route path="/manager/forecast" element={<ForecastReports />} />
+                  <Route path="/manager/export" element={<ExportReports />} />
+
+                  {/* Common Routes - Available to all authenticated users */}
+                  <Route path="/analytics" element={<Analytics />} />
                   <Route path="/analytics/forecast" element={<ForecastReports />} />
-                  <Route path="/analytics/export" element={<ExportReports />} />
+                  <Route path="/notifications" element={<Notifications />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/help" element={<Help />} />
 

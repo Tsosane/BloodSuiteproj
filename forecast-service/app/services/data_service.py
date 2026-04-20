@@ -17,10 +17,21 @@ class DataService:
             print(f"Database error for {blood_type}: {e}")
             df = pd.DataFrame()
 
-        if df.empty or len(df) < 30:
-            # Generate sample data if no real data available
-            print(f"Generating sample data for {blood_type}")
-            df = self._generate_sample_data(blood_type, months)
+        # Check if we have sufficient real data (at least 60 days)
+        if df.empty or len(df) < 60:
+            print(f"Insufficient real data for {blood_type} ({len(df)} records). Generating sample data to supplement.")
+            sample_df = self._generate_sample_data(blood_type, months)
+            
+            if not df.empty:
+                # Combine real and sample data, prioritizing real data
+                combined_df = pd.concat([df, sample_df])
+                # Remove duplicates based on date, keeping real data
+                combined_df = combined_df.drop_duplicates(subset=['date'], keep='first')
+                df = combined_df.sort_values('date').reset_index(drop=True)
+            else:
+                df = sample_df
+        else:
+            print(f"Using real data for {blood_type} ({len(df)} records)")
 
         # Ensure complete date range
         if not df.empty:

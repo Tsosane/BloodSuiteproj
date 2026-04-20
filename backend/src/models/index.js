@@ -5,6 +5,7 @@ const Hospital = require('./Hospital');
 const BloodInventory = require('./BloodInventory');
 const Request = require('./Request');
 const Notification = require('./Notification');
+const ImportLog = require('./ImportLog');
 
 module.exports = {
   User,
@@ -13,4 +14,5 @@ module.exports = {
   BloodInventory,
   Request,
   Notification,
+  ImportLog,
 };

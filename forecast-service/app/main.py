@@ -61,28 +61,6 @@ async def health():
 
 # ==================== FORECAST ENDPOINTS ====================
 
-@app.get("/forecast/{blood_type}")
-async def get_forecast(
-    blood_type: str,
-    horizon: str = Query("30day", regex="^(7day|30day|90day)$")
-):
-    """
-    Get demand forecast for a specific blood type
-    
-    - blood_type: A+, A-, B+, B-, AB+, AB-, O+, O-
-    - horizon: 7day, 30day, or 90day
-    """
-    if blood_type not in config.BLOOD_TYPES:
-        raise HTTPException(status_code=400, detail=f"Invalid blood type. Must be one of {config.BLOOD_TYPES}")
-    
-    try:
-        forecast = forecast_service.get_forecast(blood_type, horizon)
-        return JSONResponse(content=forecast)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.get("/forecast/all")
 async def get_all_forecasts(
     horizon: str = Query("30day", regex="^(7day|30day|90day)$")
@@ -117,6 +95,28 @@ async def get_model_accuracy():
     try:
         accuracy = forecast_service.get_model_accuracy()
         return JSONResponse(content=accuracy)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/forecast/{blood_type}")
+async def get_forecast(
+    blood_type: str,
+    horizon: str = Query("30day", regex="^(7day|30day|90day)$")
+):
+    """
+    Get demand forecast for a specific blood type
+    
+    - blood_type: A+, A-, B+, B-, AB+, AB-, O+, O-
+    - horizon: 7day, 30day, or 90day
+    """
+    if blood_type not in config.BLOOD_TYPES:
+        raise HTTPException(status_code=400, detail=f"Invalid blood type. Must be one of {config.BLOOD_TYPES}")
+    
+    try:
+        forecast = forecast_service.get_forecast(blood_type, horizon)
+        return JSONResponse(content=forecast)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

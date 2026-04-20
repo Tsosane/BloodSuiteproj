@@ -5,6 +5,8 @@ This directory contains comprehensive documentation for the Blood Suite Smart Bl
 ## Documentation Structure
 
 ### Core Documentation
+- **[FULL_SYSTEM_DOCUMENTATION.md](./FULL_SYSTEM_DOCUMENTATION.md)** - Consolidated end-to-end system documentation aligned to the current implementation
+- **[Blood_Suite_Full_System_Documentation.docx](./Blood_Suite_Full_System_Documentation.docx)** - Word version of the full system documentation for sharing and printing
 - **[DEVELOPER_GUIDE.md](./DEVELOPER_GUIDE.md)** - Complete developer documentation with setup, architecture, and coding guidelines
 - **[API_REFERENCE.md](./API_REFERENCE.md)** - Detailed API documentation with all endpoints and examples
 - **[USER_MANUAL.md](./USER_MANUAL.md)** - End-user manual for all system roles and features

@@ -45,6 +45,11 @@ const Hospital = sequelize.define('Hospital', {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
   },
+  approval_status: {
+    type: DataTypes.ENUM('pending', 'approved', 'rejected'),
+    allowNull: false,
+    defaultValue: 'pending',
+  },
 }, {
   timestamps: true,
   underscored: true,

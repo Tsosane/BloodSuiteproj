@@ -44,6 +44,20 @@ const getDashboardStats = async (req, res) => {
     // Hospital statistics
     const totalHospitals = await Hospital.count();
     const approvedHospitals = await Hospital.count({ where: { is_approved: true } });
+    const pendingHospitals = await Hospital.count({
+      where: {
+        [Op.and]: [
+          { is_approved: false },
+          {
+            [Op.or]: [
+              { approval_status: 'pending' },
+              { approval_status: null },
+            ],
+          },
+        ],
+      },
+    });
+    const rejectedHospitals = await Hospital.count({ where: { approval_status: 'rejected' } });
 
     // Request fulfillment rate
     const totalRequests = await Request.count();
@@ -63,7 +77,8 @@ const getDashboardStats = async (req, res) => {
         hospitals: {
           total: totalHospitals,
           approved: approvedHospitals,
-          pending: totalHospitals - approvedHospitals,
+          pending: pendingHospitals,
+          rejected: rejectedHospitals,
         },
         requests: {
           total: totalRequests,

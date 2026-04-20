@@ -1,47 +1,68 @@
 // src/services/authService.js
 import api from './api';
 
+const persistSession = ({ token, user, profile }) => {
+  if (!token || !user) {
+    return;
+  }
+
+  localStorage.setItem('bloodSuiteToken', token);
+  localStorage.setItem('bloodSuiteUserRole', user.role);
+  localStorage.setItem('bloodSuiteUserEmail', user.email);
+  localStorage.setItem('bloodSuiteUserRoleDisplay', user.role);
+
+  if (profile?.hospital_name) {
+    localStorage.setItem('bloodSuiteHospital', profile.hospital_name);
+  } else {
+    localStorage.removeItem('bloodSuiteHospital');
+  }
+
+  if (profile?.id) {
+    localStorage.setItem('bloodSuiteHospitalId', profile.id);
+  } else {
+    localStorage.removeItem('bloodSuiteHospitalId');
+  }
+};
+
 const authService = {
   // Login user
   login: async (credentials) => {
-    try {
-      const response = await api.post('/auth/login', credentials);
-      if (response.token) {
-        localStorage.setItem('bloodSuiteToken', response.token);
-        localStorage.setItem('bloodSuiteUserRole', response.user.role);
-        localStorage.setItem('bloodSuiteUserEmail', response.user.email);
-        localStorage.setItem('bloodSuiteUserRoleDisplay', response.user.roleDisplay);
-        if (response.user.hospitalName) {
-          localStorage.setItem('bloodSuiteHospital', response.user.hospitalName);
-        }
-        if (response.user.hospitalId) {
-          localStorage.setItem('bloodSuiteHospitalId', response.user.hospitalId);
-        }
-      }
-      return response;
-    } catch (error) {
-      throw error;
-    }
+    const response = await api.post('/auth/login', credentials);
+    const payload = response.data || {};
+    const normalized = {
+      success: response.success,
+      user: payload.user,
+      profile: payload.profile || null,
+      token: payload.token,
+      message: response.message,
+    };
+
+    persistSession(normalized);
+
+    return normalized;
   },
 
   // Register new user
   register: async (userData) => {
-    try {
-      const response = await api.post('/auth/register', userData);
-      return response;
-    } catch (error) {
-      throw error;
-    }
+    const response = await api.post('/auth/register', userData);
+    return {
+      success: response.success,
+      user: response.data?.user,
+      token: response.data?.token,
+      message: response.message,
+    };
   },
 
   // Get current user profile
   getCurrentUser: async () => {
-    try {
-      const response = await api.get('/auth/me');
-      return response;
-    } catch (error) {
-      throw error;
-    }
+    const response = await api.get('/auth/me');
+    const payload = response.data || {};
+
+    return {
+      success: response.success,
+      user: payload.user,
+      profile: payload.profile || null,
+    };
   },
 
   // Logout user

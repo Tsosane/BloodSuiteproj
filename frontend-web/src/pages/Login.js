@@ -45,10 +45,11 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { getDashboardRoute } from '../routes';
 
 const Login = () => {
   const navigate = useNavigate();
-  const { setIsAuthenticated } = useAuth();
+  const { login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -70,91 +71,36 @@ const Login = () => {
 
   // Demo credentials for each role
   const demoCredentials = {
-    hospital: { email: 'hospital@bloodsuite.org', password: 'hospital123', hospitalCode: 'LS-BB-001' },
-    donor: { email: 'donor@bloodsuite.org', password: 'donor123' },
+    hospital: { email: 'hospital@qeh.org.ls', password: 'hospital123', hospitalCode: 'LS-BB-001' },
+    donor: { email: 'donor@example.com', password: 'donor123' },
     blood_bank_manager: { email: 'manager@bloodsuite.org', password: 'manager123', employeeId: 'BBM-001' },
     admin: { email: 'admin@bloodsuite.org', password: 'admin123', employeeId: 'ADMIN-001' },
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e?.preventDefault) {
+      e.preventDefault();
+    }
     setError('');
     setIsLoading(true);
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
       if (!credentials.email || !credentials.password) {
         throw new Error('Please fill in email and password');
       }
+      const response = await login({
+        email: credentials.email,
+        password: credentials.password,
+      });
 
-      if (userRole === 'hospital') {
-        if (!credentials.hospitalCode) {
-          throw new Error('Please enter hospital code');
-        }
-        
-        const hospital = hospitals.find(h => h.code === credentials.hospitalCode);
-        if (!hospital) {
-          throw new Error('Invalid hospital code. Please use format: LS-BB-001 to LS-BB-005');
-        }
-        
-        localStorage.setItem('bloodSuiteToken', 'jwt-token-' + Date.now());
-        localStorage.setItem('bloodSuiteHospital', hospital.name);
-        localStorage.setItem('bloodSuiteHospitalCode', credentials.hospitalCode);
-        localStorage.setItem('bloodSuiteHospitalId', hospital.code);
-        localStorage.setItem('bloodSuiteUserEmail', credentials.email);
-        localStorage.setItem('bloodSuiteUserRole', 'hospital');
-        localStorage.setItem('bloodSuiteUserRoleDisplay', 'Hospital Staff');
-        localStorage.setItem('bloodSuiteLastUser', credentials.email?.split('@')[0] || 'Hospital Staff');
-        
-      } else if (userRole === 'donor') {
-        localStorage.setItem('bloodSuiteToken', 'jwt-token-' + Date.now());
-        localStorage.setItem('bloodSuiteUserEmail', credentials.email);
-        localStorage.setItem('bloodSuiteUserRole', 'donor');
-        localStorage.setItem('bloodSuiteUserRoleDisplay', 'Donor');
-        localStorage.setItem('bloodSuiteHospital', 'Donor Portal');
-        localStorage.setItem('bloodSuiteLastUser', credentials.email?.split('@')[0] || 'Donor');
-        
-      } else if (userRole === 'blood_bank_manager') {
-        if (!credentials.employeeId) {
-          throw new Error('Please enter employee ID');
-        }
-        
-        if (!credentials.employeeId.match(/^BBM-\d{3}$/)) {
-          throw new Error('Invalid Employee ID format. Use format: BBM-001 to BBM-999');
-        }
-        
-        localStorage.setItem('bloodSuiteToken', 'jwt-token-' + Date.now());
-        localStorage.setItem('bloodSuiteUserEmail', credentials.email);
-        localStorage.setItem('bloodSuiteEmployeeId', credentials.employeeId);
-        localStorage.setItem('bloodSuiteUserRole', 'blood_bank_manager');
-        localStorage.setItem('bloodSuiteUserRoleDisplay', 'Blood Bank Manager');
-        localStorage.setItem('bloodSuiteHospital', 'Maseru Central Blood Bank');
-        localStorage.setItem('bloodSuiteLastUser', credentials.email?.split('@')[0] || 'Manager');
-        
-      } else if (userRole === 'admin') {
-        if (!credentials.employeeId) {
-          throw new Error('Please enter employee ID');
-        }
-        
-        if (!credentials.employeeId.match(/^ADMIN-\d{3}$/)) {
-          throw new Error('Invalid Employee ID format. Use format: ADMIN-001 to ADMIN-999');
-        }
-        
-        localStorage.setItem('bloodSuiteToken', 'jwt-token-' + Date.now());
-        localStorage.setItem('bloodSuiteUserEmail', credentials.email);
-        localStorage.setItem('bloodSuiteEmployeeId', credentials.employeeId);
-        localStorage.setItem('bloodSuiteUserRole', 'admin');
-        localStorage.setItem('bloodSuiteUserRoleDisplay', 'System Administrator');
-        localStorage.setItem('bloodSuiteHospital', 'Blood Suite System Administration');
-        localStorage.setItem('bloodSuiteLastUser', credentials.email?.split('@')[0] || 'Admin');
+      if (!response.success || !response.user) {
+        throw new Error(response.error || 'Login failed. Please check your credentials.');
       }
-      
-      setIsAuthenticated(true);
-      navigate('/dashboard');
+
+      navigate(getDashboardRoute(response.user.role));
       
     } catch (err) {
-      setError(err.message || 'Login failed. Please check your credentials.');
+      setError(err.error || err.message || 'Login failed. Please check your credentials.');
     } finally {
       setIsLoading(false);
     }
@@ -187,25 +133,18 @@ const Login = () => {
   const handleHospitalQuickLogin = (hospitalCode) => {
     const hospital = hospitals.find(h => h.code === hospitalCode);
     setCredentials({
-      email: `hospital@${hospitalCode.toLowerCase()}.org`,
+      email: demoCredentials.hospital.email,
       password: 'hospital123',
       hospitalCode: hospitalCode,
       employeeId: '',
     });
     setUserRole('hospital');
-    
-    setTimeout(() => {
-      localStorage.setItem('bloodSuiteToken', 'jwt-token-' + hospitalCode + '-' + Date.now());
-      localStorage.setItem('bloodSuiteHospital', hospital.name);
-      localStorage.setItem('bloodSuiteHospitalCode', hospitalCode);
-      localStorage.setItem('bloodSuiteHospitalId', hospitalCode);
-      localStorage.setItem('bloodSuiteUserEmail', `hospital@${hospitalCode.toLowerCase()}.org`);
-      localStorage.setItem('bloodSuiteUserRole', 'hospital');
-      localStorage.setItem('bloodSuiteUserRoleDisplay', 'Hospital Staff');
-      localStorage.setItem('bloodSuiteLastUser', 'Hospital Staff');
-      setIsAuthenticated(true);
-      navigate('/dashboard');
-    }, 500);
+
+    if (hospital) {
+      setTimeout(() => {
+        handleSubmit();
+      }, 300);
+    }
   };
 
   // Role-specific professional card content
@@ -606,7 +545,6 @@ const Login = () => {
                     }}
                     placeholder="e.g., LS-BB-001"
                     helperText="Enter your hospital code (LS-BB-001 to LS-BB-005)"
-                    required
                     sx={{ mb: 2 }}
                   />
                 )}
@@ -628,7 +566,6 @@ const Login = () => {
                     }}
                     placeholder={userRole === 'blood_bank_manager' ? "BBM-001" : "ADMIN-001"}
                     helperText={userRole === 'blood_bank_manager' ? "Format: BBM-001 to BBM-999" : "Format: ADMIN-001 to ADMIN-999"}
-                    required
                     sx={{ mb: 2 }}
                   />
                 )}

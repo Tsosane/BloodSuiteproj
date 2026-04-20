@@ -49,41 +49,93 @@ import {
   Legend,
   ResponsiveContainer,
   ComposedChart,
+  BarChart,
   Bar,
 } from 'recharts';
 import forecastService from '../../services/forecastService';
 
 const ForecastReports = () => {
+  const bloodTypes = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
   const [forecastPeriod, setForecastPeriod] = useState('7day');
   const [selectedBloodType, setSelectedBloodType] = useState('all');
   const [anchorEl, setAnchorEl] = useState(null);
   const [activeTab, setActiveTab] = useState(0);
   const [forecastDataItems, setForecastDataItems] = useState([]);
+  const [allForecastSummary, setAllForecastSummary] = useState([]);
   const [shortageAlerts, setShortageAlerts] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
   const [modelAccuracy, setModelAccuracy] = useState({ mape: 0, mae: 0, rmse: 0, lastUpdated: null });
   const [isRetraining, setIsRetraining] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [exportStatus, setExportStatus] = useState(null);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [notificationSummary, setNotificationSummary] = useState(null);
+
+  const mergeNotificationSummary = (current, incoming) => {
+    if (!incoming) {
+      return current;
+    }
+
+    return {
+      shortageTypesProcessed: Math.max(Number(current?.shortageTypesProcessed || 0), Number(incoming.shortageTypesProcessed || 0)),
+      notificationsSent: Math.max(Number(current?.notificationsSent || 0), Number(incoming.notificationsSent || 0)),
+      emailsSent: Math.max(Number(current?.emailsSent || 0), Number(incoming.emailsSent || 0)),
+      smsSent: Math.max(Number(current?.smsSent || 0), Number(incoming.smsSent || 0)),
+      whatsappSent: Math.max(Number(current?.whatsappSent || 0), Number(incoming.whatsappSent || 0)),
+      skippedExisting: Math.max(Number(current?.skippedExisting || 0), Number(incoming.skippedExisting || 0)),
+    };
+  };
 
   const fetchForecastData = async () => {
     setIsLoading(true);
+    setErrorMessage('');
     try {
+      let combinedNotificationSummary = null;
+
       const forecastResponse = selectedBloodType === 'all'
         ? await forecastService.getForecasts({ horizon: forecastPeriod })
         : await forecastService.getForecastByBloodType(selectedBloodType, forecastPeriod);
 
       if (forecastResponse?.success) {
+        combinedNotificationSummary = mergeNotificationSummary(combinedNotificationSummary, forecastResponse.notifications);
         const data = forecastResponse.data || {};
-        setForecastDataItems(data.forecasts || data.forecast || []);
+        if (selectedBloodType === 'all') {
+          setAllForecastSummary(data.forecasts || []);
+          setForecastDataItems([]);
+        } else {
+          const forecastItems = (data.forecasts || []).map((item) => ({
+            ...item,
+            demand: item.predicted_demand,
+            lowerBound: item.lower_bound,
+            upperBound: item.upper_bound,
+            supply: data.current_stock,
+          }));
+          setForecastDataItems(forecastItems);
+          setAllForecastSummary([]);
+        }
       }
 
       const alertsResponse = await forecastService.getShortageAlerts();
       if (alertsResponse?.success) {
-        setShortageAlerts(alertsResponse.data || []);
+        combinedNotificationSummary = mergeNotificationSummary(combinedNotificationSummary, alertsResponse.notifications);
+        const alerts = Array.isArray(alertsResponse.data)
+          ? alertsResponse.data
+          : alertsResponse.data?.alerts || [];
+
+        setShortageAlerts(alerts.map((alert) => ({
+          bloodType: alert.bloodType || alert.blood_type,
+          currentStock: alert.currentStock || alert.current_stock || 0,
+          predictedDemand: alert.predictedDemand || alert.predicted_demand_7d || 0,
+          shortage: alert.shortage || 0,
+          severity: alert.severity || 'medium',
+          daysUntilShortage: alert.daysUntilShortage || alert.days_until_shortage || 7,
+        })));
       }
 
       try {
         const recommendationsResponse = await forecastService.getRecommendedStock();
         if (recommendationsResponse?.success) {
+          combinedNotificationSummary = mergeNotificationSummary(combinedNotificationSummary, recommendationsResponse.notifications);
           setRecommendations(recommendationsResponse.data || []);
         }
       } catch (recError) {
@@ -93,10 +145,20 @@ const ForecastReports = () => {
 
       const accuracyResponse = await forecastService.getForecastAccuracy();
       if (accuracyResponse?.success) {
-        setModelAccuracy(accuracyResponse.data || {});
+        const ensemble = accuracyResponse.data?.models?.Ensemble || {};
+        setModelAccuracy({
+          mape: ensemble.mape || 0,
+          mae: ensemble.mae || 0,
+          rmse: ensemble.rmse || 0,
+          lastUpdated: accuracyResponse.data?.last_updated || null,
+        });
       }
+
+      setNotificationSummary(combinedNotificationSummary);
     } catch (error) {
       console.error('Unable to load forecast data', error);
+      setErrorMessage(error.error || error.message || 'Unable to load forecast data.');
+      setNotificationSummary(null);
     } finally {
       setIsLoading(false);
     }
@@ -127,7 +189,6 @@ const ForecastReports = () => {
     fetchForecastData();
   }, [forecastPeriod, selectedBloodType]);
 
-  const xKey = forecastPeriod === '7day' ? 'day' : forecastPeriod === '30day' ? 'week' : 'month';
   const currentData = forecastDataItems;
   const hasShortage = shortageAlerts.length > 0;
   const showBounds = currentData.some((item) => item.lowerBound != null);
@@ -151,6 +212,32 @@ const ForecastReports = () => {
       case 'medium': return '#ff9800';
       default: return '#4caf50';
     }
+  };
+
+  const renderNotificationSummary = () => {
+    if (!notificationSummary || notificationSummary.shortageTypesProcessed <= 0) {
+      return null;
+    }
+
+    const sentParts = [];
+    if (notificationSummary.notificationsSent > 0) {
+      sentParts.push(`${notificationSummary.notificationsSent} in-app request message(s)`);
+    }
+    if (notificationSummary.emailsSent > 0) {
+      sentParts.push(`${notificationSummary.emailsSent} email(s)`);
+    }
+    if (notificationSummary.smsSent > 0) {
+      sentParts.push(`${notificationSummary.smsSent} SMS message(s)`);
+    }
+    if (notificationSummary.whatsappSent > 0) {
+      sentParts.push(`${notificationSummary.whatsappSent} WhatsApp message(s)`);
+    }
+
+    if (sentParts.length === 0) {
+      return 'Prediction-triggered donor outreach ran successfully. No new donor messages were needed.';
+    }
+
+    return `Prediction-triggered donor outreach sent ${sentParts.join(', ')}.`;
   };
   return (
     <Box sx={{ p: 3 }}>
@@ -195,6 +282,17 @@ const ForecastReports = () => {
           <Typography variant="body2">{shortageAlerts.filter(a => a.severity === 'high').map(a => a.bloodType).join(', ')} blood types projected to be in shortage within 7 days.</Typography>
         </Alert>
       )}
+      {errorMessage && (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          {errorMessage}
+        </Alert>
+      )}
+      {!errorMessage && notificationSummary && notificationSummary.shortageTypesProcessed > 0 && (
+        <Alert severity={notificationSummary.notificationsSent > 0 ? 'success' : 'info'} sx={{ mb: 3 }}>
+          {renderNotificationSummary()}
+          {notificationSummary.skippedExisting > 0 ? ` ${notificationSummary.skippedExisting} recent notification(s) were skipped to avoid duplicates.` : ''}
+        </Alert>
+      )}
       {exportStatus === 'success' && (
         <Alert severity="success" sx={{ mb: 3 }}>
           Forecast export request submitted successfully.
@@ -232,7 +330,7 @@ const ForecastReports = () => {
                     <WarningIcon />
                   </Avatar>
                 </Box>
-                <LinearProgress variant="determinate" value={(alert.currentStock / alert.predictedDemand) * 100} sx={{ mt: 2, height: 6, borderRadius: 3, bgcolor: '#ffe0e0', '& .MuiLinearProgress-bar': { bgcolor: getSeverityColor(alert.severity) } }} />
+                <LinearProgress variant="determinate" value={alert.predictedDemand > 0 ? Math.min(100, (alert.currentStock / alert.predictedDemand) * 100) : 0} sx={{ mt: 2, height: 6, borderRadius: 3, bgcolor: '#ffe0e0', '& .MuiLinearProgress-bar': { bgcolor: getSeverityColor(alert.severity) } }} />
                 <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>Shortage expected in {alert.daysUntilShortage} days</Typography>
               </CardContent>
             </Card>
@@ -248,12 +346,51 @@ const ForecastReports = () => {
         {activeTab === 0 && (
           <Box sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, color: '#d32f2f' }}>
-              {forecastPeriod === '7day' ? '7-Day Demand Forecast' : forecastPeriod === '30day' ? '30-Day Demand Forecast' : '90-Day Demand Forecast'}
+              {selectedBloodType === 'all'
+                ? `All Blood Types Forecast Summary (${forecastPeriod.replace('day', '-day')})`
+                : forecastPeriod === '7day'
+                  ? '7-Day Demand Forecast'
+                  : forecastPeriod === '30day'
+                    ? '30-Day Demand Forecast'
+                    : '90-Day Demand Forecast'}
             </Typography>
             {isLoading ? (
               <Box sx={{ py: 10, textAlign: 'center' }}>
                 <CircularProgress sx={{ color: '#d32f2f' }} />
               </Box>
+            ) : selectedBloodType === 'all' ? (
+              allForecastSummary.length === 0 ? (
+                <Box sx={{ py: 10, textAlign: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">No forecast summary available for all blood types.</Typography>
+                </Box>
+              ) : (
+                <Box>
+                  <ResponsiveContainer width="100%" height={400}>
+                    <BarChart data={allForecastSummary} margin={{ top: 20, right: 20, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="blood_type" />
+                      <YAxis />
+                      <RechartsTooltip />
+                      <Legend />
+                      <Bar dataKey="total_predicted_demand" fill="#d32f2f" name="Total Predicted Demand" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                  <Box sx={{ mt: 2 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>Total demand by blood type</Typography>
+                    <Grid container spacing={2}>
+                      {allForecastSummary.map((item) => (
+                        <Grid item xs={12} sm={6} md={3} key={item.blood_type}>
+                          <Paper sx={{ p: 2 }}>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>{item.blood_type}</Typography>
+                            <Typography variant="body2" color="text.secondary">Predicted demand: {item.total_predicted_demand}</Typography>
+                            <Typography variant="body2" color="text.secondary">Current stock: {item.current_stock}</Typography>
+                          </Paper>
+                        </Grid>
+                      ))}
+                    </Grid>
+                  </Box>
+                </Box>
+              )
             ) : currentData.length === 0 ? (
               <Box sx={{ py: 10, textAlign: 'center' }}>
                 <Typography variant="body2" color="text.secondary">No forecast data available for the selected filters.</Typography>
@@ -262,7 +399,7 @@ const ForecastReports = () => {
               <ResponsiveContainer width="100%" height={400}>
                 <ComposedChart data={currentData}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey={forecastPeriod === '7day' ? 'day' : forecastPeriod === '30day' ? 'week' : 'month'} />
+                  <XAxis dataKey={forecastPeriod === '7day' ? 'day' : 'date'} />
                   <YAxis />
                   <RechartsTooltip />
                   <Legend />

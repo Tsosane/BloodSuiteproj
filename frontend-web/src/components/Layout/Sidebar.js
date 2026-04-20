@@ -40,7 +40,7 @@ import { Link, useLocation } from 'react-router-dom';
 
 const drawerWidth = 280;
 
-const Sidebar = ({ open, onClose, userRole, userName, userHospital, onLogout }) => {
+const Sidebar = ({ open, mobileOpen, onClose, userRole, userName, userHospital, onLogout }) => {
   const location = useLocation();
   const theme = useTheme();
   const [openMenus, setOpenMenus] = useState({});
@@ -78,6 +78,12 @@ const Sidebar = ({ open, onClose, userRole, userName, userHospital, onLogout }) 
           children: null,
         },
         {
+          title: 'Data Import',
+          icon: <AdminIcon />,
+          path: '/admin/data-import',
+          children: null,
+        },
+        {
           title: 'Blood Inventory',
           icon: <BloodtypeIcon />,
           path: '/inventory',
@@ -87,6 +93,12 @@ const Sidebar = ({ open, onClose, userRole, userName, userHospital, onLogout }) 
           title: 'Analytics',
           icon: <AnalyticsIcon />,
           path: '/analytics',
+          children: null,
+        },
+        {
+          title: 'Request Forecast',
+          icon: <TrendingUpIcon />,
+          path: '/analytics/forecast',
           children: null,
         },
       ];
@@ -129,6 +141,12 @@ const Sidebar = ({ open, onClose, userRole, userName, userHospital, onLogout }) 
           title: 'Analytics',
           icon: <AnalyticsIcon />,
           path: '/analytics',
+          children: null,
+        },
+        {
+          title: 'Request Forecast',
+          icon: <TrendingUpIcon />,
+          path: '/analytics/forecast',
           children: null,
         },
         {
@@ -202,13 +220,12 @@ const Sidebar = ({ open, onClose, userRole, userName, userHospital, onLogout }) 
           children: null,
         },
         {
-          title: 'Analytics',
+          title: 'Analytics & Reporting',
           icon: <AnalyticsIcon />,
           path: '/analytics',
           children: [
-            { title: 'Dashboard', path: '/analytics', icon: <DashboardIcon /> },
-            { title: 'Demand Forecast', path: '/analytics/forecast', icon: <TrendingUpIcon /> },
-            { title: 'Reports', path: '/analytics/export', icon: <AssessmentIcon /> },
+            { title: 'Analytics Dashboard', path: '/analytics', icon: <AnalyticsIcon /> },
+            { title: 'Request Forecast', path: '/analytics/forecast', icon: <TrendingUpIcon /> },
           ],
         },
         {

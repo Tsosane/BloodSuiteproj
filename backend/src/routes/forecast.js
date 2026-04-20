@@ -4,21 +4,50 @@ const {
   getForecast,
   getAllForecasts,
   getShortageAlerts,
+  getRecommendedStock,
   getModelAccuracy,
   retrainModels,
-  healthCheck
+  triggerDonorNotifications,
 } = require('../controllers/forecastController');
 const { authMiddleware } = require('../middleware/auth');
 const { rbacMiddleware, ROLES } = require('../middleware/rbac');
 
 router.use(authMiddleware);
-router.use(rbacMiddleware([ROLES.ADMIN, ROLES.MANAGER]));
 
-router.get('/alerts', getShortageAlerts);
-router.get('/recommendations', getRecommendedStock);
-router.get('/accuracy', getModelAccuracy);
-router.post('/train', retrainModels);
-router.get('/:bloodType', getForecast);
-router.get('/', getAllForecasts);
+router.get(
+  '/alerts',
+  rbacMiddleware([ROLES.ADMIN, ROLES.MANAGER, ROLES.HOSPITAL]),
+  getShortageAlerts
+);
+router.get(
+  '/recommendations',
+  rbacMiddleware([ROLES.ADMIN, ROLES.MANAGER, ROLES.HOSPITAL]),
+  getRecommendedStock
+);
+router.get(
+  '/accuracy',
+  rbacMiddleware([ROLES.ADMIN, ROLES.MANAGER, ROLES.HOSPITAL]),
+  getModelAccuracy
+);
+router.post(
+  '/train',
+  rbacMiddleware([ROLES.ADMIN, ROLES.MANAGER]),
+  retrainModels
+);
+router.post(
+  '/notify-donors',
+  rbacMiddleware([ROLES.ADMIN, ROLES.MANAGER, ROLES.HOSPITAL]),
+  triggerDonorNotifications
+);
+router.get(
+  '/:bloodType',
+  rbacMiddleware([ROLES.ADMIN, ROLES.MANAGER, ROLES.HOSPITAL]),
+  getForecast
+);
+router.get(
+  '/',
+  rbacMiddleware([ROLES.ADMIN, ROLES.MANAGER, ROLES.HOSPITAL]),
+  getAllForecasts
+);
 
 module.exports = router;

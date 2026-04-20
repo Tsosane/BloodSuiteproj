@@ -12,6 +12,16 @@ const hospitalService = {
     }
   },
 
+  // Get approved hospitals for donor-facing flows
+  getApprovedHospitals: async () => {
+    try {
+      const response = await api.get('/hospitals/approved');
+      return response;
+    } catch (error) {
+      throw error;
+    }
+  },
+
   // Get current hospital profile
   getMyHospital: async () => {
     try {

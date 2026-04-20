@@ -41,6 +41,7 @@ import {
   CheckCircle as CheckCircleIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import authService from '../services/authService';
 
 const Register = () => {
   const navigate = useNavigate();
@@ -163,49 +164,54 @@ const Register = () => {
     setError('');
     
     try {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Store user data based on role
       const userData = {
         email: formData.email,
+        password: formData.password,
         role: userRole,
-        createdAt: new Date().toISOString(),
       };
       
       if (userRole === 'donor') {
-        userData.fullName = formData.fullName;
-        userData.bloodType = formData.bloodType;
-        userData.dateOfBirth = formData.dateOfBirth;
+        userData.full_name = formData.fullName;
+        userData.blood_type = formData.bloodType;
+        userData.date_of_birth = formData.dateOfBirth;
         userData.gender = formData.gender;
         userData.phone = formData.phone;
         userData.address = formData.address;
         userData.latitude = formData.latitude;
         userData.longitude = formData.longitude;
       } else if (userRole === 'hospital') {
-        userData.hospitalName = formData.hospitalName;
-        userData.hospitalCode = formData.hospitalCode;
-        userData.licenseNumber = formData.licenseNumber;
+        userData.hospital_name = formData.hospitalName;
+        userData.hospital_code = formData.hospitalCode;
+        userData.license_number = formData.licenseNumber;
         userData.address = formData.hospitalAddress;
         userData.phone = formData.phone;
         userData.latitude = formData.hospitalLatitude;
         userData.longitude = formData.hospitalLongitude;
-        userData.isApproved = false;
+        userData.capacity = 0;
       } else {
-        userData.fullName = formData.fullName;
-        userData.employeeId = formData.employeeId;
+        userData.full_name = formData.fullName;
+        userData.employee_id = formData.employeeId;
         userData.department = formData.department;
         userData.phone = formData.phone;
       }
-      
-      localStorage.setItem('bloodSuiteRegistration', JSON.stringify(userData));
-      setSuccess('Registration successful! Please login.');
+
+      const response = await authService.register(userData);
+      if (!response?.success) {
+        throw new Error(response?.message || 'Registration failed. Please try again.');
+      }
+
+      setSuccess(
+        userRole === 'hospital'
+          ? 'Hospital account created. Please log in and wait for admin approval.'
+          : 'Registration successful! Please log in.'
+      );
       
       setTimeout(() => {
         navigate('/login');
       }, 2000);
       
     } catch (err) {
-      setError(err.message || 'Registration failed. Please try again.');
+      setError(err.error || err.message || 'Registration failed. Please try again.');
     } finally {
       setIsLoading(false);
     }

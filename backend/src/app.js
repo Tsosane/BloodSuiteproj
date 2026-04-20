@@ -16,6 +16,8 @@ const requestRoutes = require('./routes/requests');
 const notificationRoutes = require('./routes/notifications');
 const analyticsRoutes = require('./routes/analytics');
 const forecastRoutes = require('./routes/forecast');
+const dataImportRoutes = require('./routes/dataImport');
+const adminRoutes = require('./routes/admin');
 
 const app = express();
 
@@ -47,6 +49,8 @@ app.use('/api/requests', requestRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/forecast', forecastRoutes);
+app.use('/api/data-import', dataImportRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
