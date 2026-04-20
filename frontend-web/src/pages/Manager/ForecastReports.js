@@ -201,7 +201,14 @@ const ForecastReports = () => {
   };
 
   const currentData = forecastDataItems;
-  const hasShortage = shortageAlerts.length > 0;
+  const filteredShortageAlerts = selectedBloodType === 'all'
+    ? shortageAlerts
+    : shortageAlerts.filter((alert) => alert.bloodType === selectedBloodType);
+  const filteredRecommendations = selectedBloodType === 'all'
+    ? recommendations
+    : recommendations.filter((recommendation) => recommendation.bloodType === selectedBloodType);
+  const highSeverityAlerts = filteredShortageAlerts.filter((alert) => alert.severity === 'high');
+  const hasShortage = filteredShortageAlerts.length > 0;
   const showBounds = currentData.some((item) => item.lowerBound != null);
 
   const buildExportRows = () => {
@@ -391,7 +398,11 @@ const ForecastReports = () => {
       {hasShortage && (
         <Alert severity="error" sx={{ mb: 3, bgcolor: '#ffebee' }}>
           <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>Critical Shortage Alert</Typography>
-          <Typography variant="body2">{shortageAlerts.filter(a => a.severity === 'high').map(a => a.bloodType).join(', ')} blood types projected to be in shortage within 7 days.</Typography>
+          <Typography variant="body2">
+            {highSeverityAlerts.length > 0
+              ? `${highSeverityAlerts.map((alert) => alert.bloodType).join(', ')} projected to be in shortage within 7 days.`
+              : `${selectedBloodType === 'all' ? 'Some blood types are' : `${selectedBloodType} is`} projected to face a shortage in the selected view.`}
+          </Typography>
         </Alert>
       )}
       {errorMessage && (
@@ -439,7 +450,7 @@ const ForecastReports = () => {
       )}
 
       <Grid container spacing={3} sx={{ mb: 4 }}>
-        {shortageAlerts.map((alert) => (
+        {filteredShortageAlerts.map((alert) => (
           <Grid item xs={12} sm={6} md={4} key={alert.bloodType}>
             <Card sx={{ borderTop: `4px solid ${getSeverityColor(alert.severity)}` }}>
               <CardContent>
@@ -472,11 +483,11 @@ const ForecastReports = () => {
             <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, color: '#d32f2f' }}>
               {selectedBloodType === 'all'
                 ? `All Blood Types Forecast Summary (${forecastPeriod.replace('day', '-day')})`
-                : forecastPeriod === '7day'
+                : `${selectedBloodType} ${forecastPeriod === '7day'
                   ? '7-Day Demand Forecast'
                   : forecastPeriod === '30day'
                     ? '30-Day Demand Forecast'
-                    : '90-Day Demand Forecast'}
+                    : '90-Day Demand Forecast'}`}
             </Typography>
             {isLoading ? (
               <Box sx={{ py: 10, textAlign: 'center' }}>
@@ -549,8 +560,15 @@ const ForecastReports = () => {
         {activeTab === 1 && (
           <Box sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, color: '#d32f2f' }}>Recommended Actions</Typography>
+            {filteredRecommendations.length === 0 ? (
+              <Box sx={{ py: 6, textAlign: 'center' }}>
+                <Typography variant="body2" color="text.secondary">
+                  No recommended actions are available for {selectedBloodType === 'all' ? 'the current forecast selection' : selectedBloodType}.
+                </Typography>
+              </Box>
+            ) : (
             <Grid container spacing={2}>
-              {recommendations.map((rec) => (
+              {filteredRecommendations.map((rec) => (
                 <Grid item xs={12} key={rec.bloodType}>
                   <Paper sx={{ p: 2, borderLeft: `4px solid ${getSeverityColor(rec.priority)}` }}>
                     <Box display="flex" justifyContent="space-between" alignItems="center">
@@ -565,6 +583,7 @@ const ForecastReports = () => {
                 </Grid>
               ))}
             </Grid>
+            )}
           </Box>
         )}
 
